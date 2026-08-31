@@ -6,6 +6,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-08-16
+### Fixed
+- Renaming a title now shows you the title you are renaming. The field opened empty, so
+  correcting a typo meant retyping the whole thing from memory — with no reference to
+  what it had been. The current title is displayed on opening, and <kbd>Tab</kbd> loads
+  it into the field for editing.
+- `pinion retitle --url <URL>` with no new title now prints the current title instead of
+  erroring, which is how the workflow reads it. A failed lookup in that mode exits
+  quietly rather than printing an Alfred error item, which the script filter would
+  otherwise have shown as the bookmark's title.
+- Renaming a bookmark to the title it already has is now a no-op instead of a needless
+  write to Pinboard.
+
 ## [0.27.0] - 2026-08-16
 ### Added
 - **You can now rename a bookmark's title.** Highlight it in `ps`, press <kbd>→</kbd>
@@ -469,7 +482,8 @@ Improve error messages dusing post/delete/search operations.
 
 <!-- Releases from 0.17.2 onward are published by this fork and tagged vX.Y.Z.
      Earlier releases live in the upstream repository and are tagged bare. -->
-[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/vmlrodrigues/pinion/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/vmlrodrigues/pinion/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/vmlrodrigues/pinion/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/vmlrodrigues/pinion/compare/v0.25.0...v0.25.1

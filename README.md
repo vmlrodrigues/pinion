@@ -203,7 +203,11 @@ The *Rename Pinboard Tag* Universal Action does the same from anywhere in Alfred
 ## Renaming a bookmark's title
 
 Search with `ps`, highlight the bookmark, press <kbd>→</kbd> and choose
-**Rename Pinboard Title**. Type the new title and press <kbd>Return</kbd>.
+**Rename Pinboard Title**.
+
+The bookmark's current title is shown straight away. Press <kbd>Tab</kbd> to load it
+into the field and edit it — useful when you are fixing a typo rather than replacing the
+whole thing — or just type a new title over the top. <kbd>Return</kbd> applies it.
 
 The bookmark keeps its tags, notes, privacy and read-later flag — only the title
 changes. Pinboard has no edit endpoint, so this re-posts the bookmark to the same URL

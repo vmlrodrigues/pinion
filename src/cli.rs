@@ -165,7 +165,9 @@ pub enum SubCommand {
         url: String,
         /// The new title. Taken as the remaining arguments and joined with spaces,
         /// so it does not need quoting.
-        #[arg(required = true)]
+        ///
+        /// Omit it to print the bookmark's current title instead of changing
+        /// anything — that is how the workflow pre-fills the field for editing.
         title: Vec<String>,
     },
 

@@ -4510,26 +4510,40 @@ end run</string>
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
-				<string>python3 -c '
+				<string># The Argument utility put the actioned URL in $retitle_url. Ask the binary what
+# the bookmark is called now, so the existing title can be shown and pre-filled —
+# renaming a title you cannot see means retyping it in full for a one-letter fix.
+current=$(./pinion retitle --url "$retitle_url" 2&gt;/dev/null) || current=""
+
+python3 -c '
 import json, sys
-q = sys.argv[1] if len(sys.argv) &gt; 1 else ""
+current = sys.argv[1]
+q = sys.argv[2] if len(sys.argv) &gt; 2 else ""
 if not q.strip():
-    items = [{"title": "Type the new title…",
-              "subtitle": "Tags, notes and privacy are kept",
-              "valid": False}]
+    items = [{
+        "title": current or "Type the new title…",
+        "subtitle": ("Current title — press ⇥ to edit it, or just type a new one"
+                     if current else "Tags, notes and privacy are kept"),
+        "autocomplete": current,
+        "valid": False,
+        "icon": {"path": "bookmarks.png"},
+    }]
 else:
-    items = [{"title": q,
-              "subtitle": "Set as this bookmark’s title",
-              "arg": q, "valid": True,
-              "icon": {"path": "bookmarks.png"}}]
+    items = [{
+        "title": q,
+        "subtitle": (f"Replaces: {current}" if current else "Set as this bookmark’s title"),
+        "arg": q,
+        "valid": True,
+        "icon": {"path": "bookmarks.png"},
+    }]
 print(json.dumps({"items": items}))
-' "$1"</string>
+' "$current" "$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
 				<string></string>
 				<key>subtext</key>
-				<string>Enter the new title</string>
+				<string>Edit the title, then press ↩</string>
 				<key>title</key>
 				<string>Rename bookmark title</string>
 				<key>type</key>
@@ -5710,7 +5724,7 @@ rename by iconmu from the Noun Project</string>
 		</dict>
 	</array>
 	<key>version</key>
-	<string>0.27.0</string>
+	<string>0.27.1</string>
 	<key>webaddress</key>
 	<string>https://github.com/vmlrodrigues/pinion</string>
 </dict>

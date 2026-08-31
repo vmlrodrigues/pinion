@@ -21,41 +21,73 @@ impl Runner<'_, '_> {
         let new_title = title.join(" ");
         let new_title = new_title.trim();
 
-        if url.trim().is_empty() || new_title.is_empty() {
-            crate::show_error_alfred("Need a URL and a new title.");
+        if url.trim().is_empty() {
+            crate::show_error_alfred("Need a URL.");
             process::exit(1);
         }
+
+        // With no new title this is a read: print what the bookmark is called now.
+        // The workflow uses this to show the existing title and pre-fill it for
+        // editing, so a one-character correction does not mean retyping the lot.
+        let read_only = new_title.is_empty();
 
         // `find_url` hands back references into the cache, and `Pin` is not `Clone`,
         // so copy out the fields we need to carry over before touching `pinboard`
         // mutably below.
-        let (tags, shared, toread, notes) = match self.pinboard.as_ref().unwrap().find_url(url) {
-            Ok(Some(pins)) if !pins.is_empty() => {
-                let p = pins[0];
-                debug!("  retitling {:?} -> {:?}", p.title, new_title);
-                (
-                    p.tags.to_string(),
-                    p.shared.to_string(),
-                    p.toread.to_string(),
-                    p.extended.as_ref().map(std::string::ToString::to_string),
-                )
-            }
-            Ok(_) => {
-                // Writing anyway would create a brand-new bookmark stripped of the
-                // tags and notes the user expected to keep.
-                crate::show_error_alfred(
-                    "That bookmark isn't in your Pinboard cache. Try `pu` first.",
-                );
-                process::exit(1);
-            }
-            Err(e) => {
-                crate::show_error_alfred(format!(
-                    "Couldn't look up the bookmark: {}",
-                    crate::redact_token(&e.to_string())
-                ));
-                process::exit(1);
-            }
-        };
+        let (current_title, tags, shared, toread, notes) =
+            match self.pinboard.as_ref().unwrap().find_url(url) {
+                Ok(Some(pins)) if !pins.is_empty() => {
+                    let p = pins[0];
+                    debug!("  current title {:?}", p.title);
+                    (
+                        p.title.to_string(),
+                        p.tags.to_string(),
+                        p.shared.to_string(),
+                        p.toread.to_string(),
+                        p.extended.as_ref().map(std::string::ToString::to_string),
+                    )
+                }
+                Ok(_) => {
+                    // A read is consumed by a script filter, which would otherwise
+                    // treat an Alfred error item as the bookmark's title. Fail
+                    // quietly and let the caller notice the exit code.
+                    if read_only {
+                        process::exit(1);
+                    }
+                    // Writing anyway would create a brand-new bookmark stripped of
+                    // the tags and notes the user expected to keep.
+                    crate::show_error_alfred(
+                        "That bookmark isn't in your Pinboard cache. Try `pu` first.",
+                    );
+                    process::exit(1);
+                }
+                Err(e) => {
+                    if read_only {
+                        error!("retitle lookup: {}", crate::redact_token(&e.to_string()));
+                        process::exit(1);
+                    }
+                    crate::show_error_alfred(format!(
+                        "Couldn't look up the bookmark: {}",
+                        crate::redact_token(&e.to_string())
+                    ));
+                    process::exit(1);
+                }
+            };
+
+        if read_only {
+            // Plain text, not an Alfred item: the script filter reads this on stdout.
+            io::stdout()
+                .write_all(current_title.as_bytes())
+                .expect("Couldn't write to stdout");
+            return;
+        }
+
+        if new_title == current_title {
+            io::stdout()
+                .write_all(b"Title unchanged.")
+                .expect("Couldn't write to stdout");
+            return;
+        }
 
         // Carry every field across except the title. `extended` is Pinboard's notes
         // field; its `description` field is the title, which is why PinBuilder takes
