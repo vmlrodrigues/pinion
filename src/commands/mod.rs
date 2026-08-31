@@ -11,6 +11,7 @@ mod delete;
 mod list;
 mod post;
 mod rename;
+mod retitle;
 mod search;
 mod update;
 mod upgrade;

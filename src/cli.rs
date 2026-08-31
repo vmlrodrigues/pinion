@@ -157,6 +157,18 @@ pub enum SubCommand {
         tags: Vec<String>,
     },
 
+    /// Changes the title of an existing bookmark.
+    #[command(name = "retitle")]
+    Retitle {
+        /// URL of the bookmark to retitle.
+        #[arg(short = 'u', long = "url")]
+        url: String,
+        /// The new title. Taken as the remaining arguments and joined with spaces,
+        /// so it does not need quoting.
+        #[arg(required = true)]
+        title: Vec<String>,
+    },
+
     /// Searches bookmarks.
     #[command(name = "search")]
     Search {

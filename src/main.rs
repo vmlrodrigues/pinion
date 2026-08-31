@@ -202,6 +202,9 @@ fn main() {
             SubCommand::Rename { .. } => {
                 runner.rename(&opt.cmd);
             }
+            SubCommand::Retitle { .. } => {
+                runner.retitle(&opt.cmd);
+            }
             // We have already checked for this variant
             SubCommand::Config { .. } => unimplemented!(),
         }

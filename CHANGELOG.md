@@ -6,6 +6,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.27.0] - 2026-08-16
+### Added
+- **You can now rename a bookmark's title.** Highlight it in `ps`, press <kbd>→</kbd>
+  and pick *Rename Pinboard Title*. There was previously no way to do this at all — the
+  `rename` command only ever handled tags.
+  - Pinboard has no edit endpoint, so this is a read-modify-write: the bookmark is
+    looked up, then re-posted to the same URL with `replace: yes`. Tags, notes, privacy
+    and the read-later flag are carried across explicitly, because anything not carried
+    would be erased. If the URL isn't in the local cache the rename is refused rather
+    than silently creating a new, empty bookmark.
+  - Also available as `pinion retitle --url <URL> <new title…>`.
+
+### Fixed
+- *Rename Pinboard Tag* no longer misfires on bookmarks. It accepts text, and a URL is
+  text, so Alfred offered it on any search result and then fed the URL in as a tag
+  name — which failed silently, because Pinboard reports success for renaming a tag
+  that does not exist. Input that looks like a URL is now rejected with a note pointing
+  at *Rename Pinboard Title*.
+
 ## [0.26.0] - 2026-08-16
 ### Added
 - **Posting a bookmark is now silent unless it fails.** It previously fired *two*
@@ -450,7 +469,8 @@ Improve error messages dusing post/delete/search operations.
 
 <!-- Releases from 0.17.2 onward are published by this fork and tagged vX.Y.Z.
      Earlier releases live in the upstream repository and are tagged bare. -->
-[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.26.0...HEAD
+[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.27.0...HEAD
+[0.27.0]: https://github.com/vmlrodrigues/pinion/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/vmlrodrigues/pinion/compare/v0.25.1...v0.26.0
 [0.25.1]: https://github.com/vmlrodrigues/pinion/compare/v0.25.0...v0.25.1
 [0.25.0]: https://github.com/vmlrodrigues/pinion/compare/v0.24.1...v0.25.0

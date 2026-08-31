@@ -86,8 +86,14 @@ security delete-generic-password -s com.victorrodrigues.pinion -a pinboard-api-t
 | `pcheck` | Check for a newer version of the workflow |
 | `pset …` | Change a setting — see [Settings](#settings) |
 
-Two **Universal Actions** are also registered, so you can act on things elsewhere in
-Alfred: *Delete Pinboard Bookmark* (on a URL) and *Rename Pinboard Tag* (on text).
+Three **Universal Actions** are also registered, so you can act on things elsewhere in
+Alfred — including on Pinion's own search results:
+
+| Action | Acts on |
+|---|---|
+| *Delete Pinboard Bookmark* | a URL |
+| *Rename Pinboard Title* | a URL — changes the bookmark's title |
+| *Rename Pinboard Tag* | text — a tag name |
 
 ## Posting a bookmark
 
@@ -193,6 +199,18 @@ The *Rename Pinboard Tag* Universal Action does the same from anywhere in Alfred
 > Pinboard's API takes up to a minute to reflect a rename, so the change will not appear
 > in your cache immediately. Their API also reports success even when the old tag does
 > not exist, so a typo is silently accepted.
+
+## Renaming a bookmark's title
+
+Search with `ps`, highlight the bookmark, press <kbd>→</kbd> and choose
+**Rename Pinboard Title**. Type the new title and press <kbd>Return</kbd>.
+
+The bookmark keeps its tags, notes, privacy and read-later flag — only the title
+changes. Pinboard has no edit endpoint, so this re-posts the bookmark to the same URL
+with `replace: yes`, which is why every other field has to be carried across explicitly.
+
+If the URL isn't in your local cache the rename is refused rather than creating a new,
+empty bookmark; run `pu` and try again.
 
 ## Settings
 
