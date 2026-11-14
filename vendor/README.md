@@ -37,6 +37,8 @@ Both crates are kept as close to upstream as possible. The changes are:
 - **`rusty-pin`**: two return types in `src/pinboard/mod.rs` gained explicit
   lifetimes, applied by `cargo clippy --fix`, to silence
   `mismatched_lifetime_syntaxes` on current Rust.
+- **`alfred-rs`**: a zero updater interval forces a release check even when there
+  is no cached check, so `pcheck` works on its first invocation.
 - Dead CI configuration (`ci/`, `appveyor.yml`, `disable-travis`) was not
   copied across.
 

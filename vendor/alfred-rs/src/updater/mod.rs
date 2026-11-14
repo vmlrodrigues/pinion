@@ -290,6 +290,7 @@ where
     ///
     /// - All calls, which happen before the `UPDATE_INTERVAL` seconds, will initialize the `Updater`
     /// by using a local cache to report metadata about a release.
+    /// Setting the interval to zero forces a remote check, even on the first run.
     ///
     /// For `Updater`s talking to `github.com`, the worker thread will only fetch a small
     /// metadata information to extract the version of the latest release.
@@ -361,13 +362,14 @@ where
 
         let (tx, rx) = mpsc::channel();
 
-        if self.last_check().is_none() {
+        let force_check = self.update_interval() == 0;
+        if !force_check && self.last_check().is_none() {
             self.set_last_check(Utc::now());
             self.save()?;
             // This send is always successful
             tx.send(Ok(None)).unwrap();
             debug!("  last check was set to now()");
-        } else if self.due_to_check() {
+        } else if force_check || self.due_to_check() {
             // it's time to talk to remote server
             debug!(" calling start_releaser_worker");
             self.start_releaser_worker(tx, p)?;
@@ -562,6 +564,7 @@ where
     /// Set the interval between checks for a newer release (in seconds)
     ///
     /// [Default value][`UPDATE_INTERVAL`] is 86,400 seconds (24 hrs).
+    /// Use zero to force a remote check when calling [`Self::init()`].
     ///
     /// # Example
     /// Set interval to be 7 days

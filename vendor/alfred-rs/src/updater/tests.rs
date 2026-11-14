@@ -20,6 +20,18 @@ fn it_tests_settings_filename() {
 }
 
 #[test]
+fn it_checks_immediately_with_an_empty_cache() {
+    setup_workflow_env_vars(true);
+    let release = setup_mock_server(200);
+    let mut updater = Updater::gh(MOCK_RELEASER_REPO_NAME).expect("cannot build Updater");
+    updater.set_interval(0);
+    updater.init().expect("couldn't init worker");
+
+    assert!(updater.update_ready().expect("couldn't check for update"));
+    release.assert();
+}
+
+#[test]
 fn it_ignores_saved_version_after_an_upgrade_async() {
     // Make sure a freshly upgraded workflow does not use version info from saved state
     setup_workflow_env_vars(true);
@@ -317,8 +329,7 @@ pub(super) fn setup_workflow_env_vars(secure_temp_dir: bool) -> PathBuf {
 }
 
 fn first_check_after_installing_workflow() {
-    // since the first check after workflow installation by user will return no update available,
-    // we need to run it at the beginning of some tests
+    // With the default interval, the first run seeds the cache without a remote check.
     let _m = setup_mock_server(200);
 
     let updater = Updater::gh(MOCK_RELEASER_REPO_NAME).expect("cannot build Updater");
@@ -326,6 +337,5 @@ fn first_check_after_installing_workflow() {
 
     updater.init().expect("couldn't init worker");
 
-    // First update_ready is always false.
     assert!(!updater.update_ready().expect("couldn't check for update"));
 }

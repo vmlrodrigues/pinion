@@ -143,8 +143,6 @@ fn main() {
     debug!("alfred_workflow_name: {:?}", var_os("alfred_workflow_name"));
     debug!("alfred_version: {:?}", var_os("alfred_version"));
 
-    let pinboard;
-    let config;
     debug!("Input cli command is {:?}", &opt.cmd);
     // Separate Config subcommand from rest of cli commands since during config we may run into
     // errors that cannot be fixed.
@@ -152,28 +150,28 @@ fn main() {
         config::run(opt.cmd);
     // Otherwise, if user is not configuring, we will abort upon any errors.
     } else {
-        let setup = setup().unwrap_or_else(|err| {
-            show_error_alfred(err.to_string());
-            process::exit(1);
-        });
+        let (config, pinboard) = if matches!(opt.cmd, SubCommand::SelfUpdate { .. }) {
+            // Software updates only need Alfred's environment and the updater cache.
+            (Config::new(), None)
+        } else {
+            let (config, pinboard) = setup().unwrap_or_else(|err| {
+                show_error_alfred(err.to_string());
+                process::exit(1);
+            });
+            (config, Some(pinboard))
+        };
 
         let mut updater = Updater::gh("vmlrodrigues/pinion").unwrap();
 
-        // If running ./pinion self -c, we have to make a network call
-        // We do this by forcing the check interval to be zero
-        if let SubCommand::SelfUpdate { check, .. } = opt.cmd {
-            if check {
-                updater.set_interval(0);
-            }
+        if matches!(opt.cmd, SubCommand::SelfUpdate { check: true, .. }) {
+            updater.set_interval(0);
         }
         updater.init().expect("cannot start updater!");
 
-        pinboard = setup.1;
-        config = setup.0;
         debug!("Workflow Config: {:?}", &config);
         let mut runner = Runner {
             config: Some(config),
-            pinboard: Some(pinboard),
+            pinboard,
             updater: Some(updater),
         };
         match opt.cmd {
