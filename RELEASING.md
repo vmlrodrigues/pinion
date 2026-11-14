@@ -13,7 +13,9 @@ upstream helper with machine-specific paths and is not the release procedure.
    - Pinion's package entry in `Cargo.lock`.
    - The root `version` in `res/workflow/info.plist`.
 3. Move the changelog's unreleased entries into a dated version section, leaving
-   an empty `Unreleased` section for the next changes.
+   an empty `Unreleased` section for the next changes. Update the link definitions
+   at the bottom: the new version compares the previous and new tags, and
+   `Unreleased` compares the new tag with `HEAD`.
 4. Run the local quality gate:
 
    ```bash

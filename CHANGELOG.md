@@ -530,7 +530,8 @@ Improve error messages dusing post/delete/search operations.
 
 <!-- Releases from 0.17.2 onward are published by this fork and tagged vX.Y.Z.
      Earlier releases live in the upstream repository and are tagged bare. -->
-[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/vmlrodrigues/pinion/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/vmlrodrigues/pinion/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/vmlrodrigues/pinion/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/vmlrodrigues/pinion/compare/v0.25.1...v0.26.0
