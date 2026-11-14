@@ -43,6 +43,9 @@ upstream helper with machine-specific paths and is not the release procedure.
    Keep the downloadable filename `Pinion.alfredworkflow`: the README and updater
    rely on it.
 
+If a tag's checks fail, diagnose the failure before publishing. Leave pushed tags
+unchanged; commit any required fix on `master` and use a fresh version and tag.
+
 ## Verify and close
 
 Download the published asset into a scratch directory and check:

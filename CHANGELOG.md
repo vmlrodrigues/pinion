@@ -6,7 +6,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.28.0] - 2026-11-15
+## [0.28.1] - 2026-11-15
 
 ### Added
 - Remember bookmarks opened from `ps` and `pt`, and rank recent opens within each
@@ -14,6 +14,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   use one result slot. Opening a bookmark stays responsive when history is busy.
 
 ### Fixed
+- Wait for the sync worker to release its lock in regression tests, avoiding a
+  timing race that stopped the unpublished 0.28.0 release candidate in CI.
 - Pick up bookmarks saved on other devices when searching or browsing tags. Keep a
   separate cache per account and retain the last valid cache when a refresh fails
   or Pinboard returns evidence that bookmarks or tags are missing.
@@ -530,8 +532,8 @@ Improve error messages dusing post/delete/search operations.
 
 <!-- Releases from 0.17.2 onward are published by this fork and tagged vX.Y.Z.
      Earlier releases live in the upstream repository and are tagged bare. -->
-[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.28.0...HEAD
-[0.28.0]: https://github.com/vmlrodrigues/pinion/compare/v0.27.1...v0.28.0
+[Unreleased]: https://github.com/vmlrodrigues/pinion/compare/v0.28.1...HEAD
+[0.28.1]: https://github.com/vmlrodrigues/pinion/compare/v0.27.1...v0.28.1
 [0.27.1]: https://github.com/vmlrodrigues/pinion/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/vmlrodrigues/pinion/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/vmlrodrigues/pinion/compare/v0.25.1...v0.26.0

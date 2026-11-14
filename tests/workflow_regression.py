@@ -2589,12 +2589,68 @@ fi
     def wait_for_sync(self, sync_file=None):
         sync_file = sync_file or self.sync_file
         deadline = time.monotonic() + 8
-        while time.monotonic() < deadline:
-            state = json.loads(sync_file.read_text())
-            if not state.get("pending", False):
-                return state
-            time.sleep(0.02)
+        # The worker publishes pending=false before it drops the refresh lock.
+        # Read that state under the same lock so the next filter can observe
+        # the final cooldown, rather than legitimately reporting an active rerun.
+        with sync_file.with_name("bookmark-sync.lock").open("a") as lock:
+            while time.monotonic() < deadline:
+                try:
+                    fcntl.flock(lock, fcntl.LOCK_SH | fcntl.LOCK_NB)
+                except BlockingIOError:
+                    pass
+                else:
+                    try:
+                        state = json.loads(sync_file.read_text())
+                        if not state.get("pending", False):
+                            return state
+                    finally:
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                time.sleep(0.02)
         self.fail("Bookmark sync worker did not finish")
+
+    def test_sync_waiter_requires_idle_state_and_released_worker_lock(self):
+        # Exercise the explicit alternate-account path as well as the default.
+        for account in (self.account_cache, self.cache / "other-account"):
+            with self.subTest(account=account.name):
+                account.mkdir(parents=True, exist_ok=True)
+                state_file = account / "bookmark-sync.json"
+                state_file.write_text(json.dumps({"pending": False}))
+                started, finished = Event(), Event()
+                results, errors = [], []
+
+                def wait():
+                    started.set()
+                    try:
+                        results.append(self.wait_for_sync(
+                            None if account == self.account_cache else state_file))
+                    except BaseException as error:
+                        errors.append(error)
+                    finally:
+                        finished.set()
+
+                with (account / "bookmark-sync.lock").open("a") as lock:
+                    fcntl.flock(lock, fcntl.LOCK_EX)
+                    worker = Thread(target=wait)
+                    worker.start()
+                    try:
+                        self.assertTrue(started.wait(2))
+                        self.assertFalse(finished.wait(.15),
+                                         "Idle state was accepted while the worker still held its lock")
+                        state_file.write_text(json.dumps({"pending": True}))
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                        self.assertFalse(finished.wait(.15),
+                                         "An available lock was accepted while sync was still pending")
+                        fcntl.flock(lock, fcntl.LOCK_EX)
+                        state_file.write_text(json.dumps({"pending": False}))
+                        self.assertFalse(finished.wait(.15))
+                    finally:
+                        state_file.write_text(json.dumps({"pending": False}))
+                        fcntl.flock(lock, fcntl.LOCK_UN)
+                        worker.join(timeout=2)
+                    self.assertFalse(worker.is_alive())
+                    if errors:
+                        raise errors[0]
+                    self.assertEqual(results, [{"pending": False}])
 
     def wait_for_update_check(self):
         deadline = time.monotonic() + 5
