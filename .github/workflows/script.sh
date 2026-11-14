@@ -47,6 +47,8 @@ build_alfred_bundle() {
     rm -f Pinion.alfredworkflow
 
     zip -r Pinion.alfredworkflow ./*
+    # Apply the same archive, bundle ID, and version checks as the updater.
+    ./pinion verify-workflow-release --tag="$GITHUB_REF_NAME" --bundle=Pinion.alfredworkflow
 
     # Deliberately unversioned: it makes
     #   releases/latest/download/Pinion.alfredworkflow
@@ -57,7 +59,8 @@ build_alfred_bundle() {
 }
 
 src="$GITHUB_WORKSPACE"
-stage=$(mktemp -d -t tmp)
+stage=$(mktemp -d "${TMPDIR:-/tmp}/pinion-workflow.XXXXXX")
+trap 'rm -rf -- "$stage"' EXIT
 
 echo "$GITHUB_WORKSPACE == $GITHUB_REF_NAME"
 if [[ "$RELEASE_COMMIT" == "true" ]]; then
@@ -119,8 +122,4 @@ else
 fi
 if [[ "$RELEASE_COMMIT" == "true" ]]; then
   build_alfred_bundle "$src" "$stage"
-elif [[ -n "$PINBOARD_TOKEN" ]]; then
-  .github/workflows/run_tests.sh ./pinion "$PINBOARD_TOKEN"
-else
-  echo "PINBOARD_TOKEN not set; skipping API tests"
 fi

@@ -1,8 +1,9 @@
 use super::{
-    anyhow, env, env_logger, remove_file, DateTime, PathBuf, Receiver, RefCell, Releaser, Result,
-    Url, Utc, Version, UPDATE_INTERVAL,
+    anyhow, env, env_logger, parse_workflow_version, DateTime, PathBuf, Receiver, RefCell,
+    ReleaseCheck, Releaser, Result, Url, Utc, Version, UPDATE_INTERVAL,
 };
 use crate::Updater;
+use chrono::Duration;
 use std::cell::Cell;
 use std::cell::Ref;
 use std::cell::RefMut;
@@ -10,13 +11,76 @@ use std::path::Path;
 use std::sync::mpsc;
 
 pub(super) const LATEST_UPDATE_INFO_CACHE_FN_ASYNC: &str = "last_check_status_async.json";
+pub(super) const MISSING_ASSET_RETRY: Duration = Duration::minutes(5);
 
-// Payload that the worker thread will send back
-type ReleasePayloadResult = Result<Option<UpdateInfo>>;
+#[derive(Deserialize, Serialize)]
+#[serde(untagged)]
+pub(super) enum ReleaseCache {
+    MissingAsset {
+        retry_after: DateTime<Utc>,
+        checked_at: Option<DateTime<Utc>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failed_asset: Option<Url>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failed_transfer_started_at: Option<DateTime<Utc>>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        failed_version: Option<Version>,
+    },
+    // Retain the existing JSON shapes for an offered release and a negative check.
+    Checked(Option<UpdateInfo>),
+}
+
+impl ReleaseCache {
+    pub(super) fn missing_asset(
+        now: DateTime<Utc>,
+        checked_at: Option<DateTime<Utc>>,
+        failed_asset: Option<Url>,
+    ) -> Self {
+        Self::MissingAsset {
+            retry_after: now + MISSING_ASSET_RETRY,
+            checked_at,
+            failed_asset,
+            failed_transfer_started_at: None,
+            failed_version: None,
+        }
+    }
+
+    pub(super) fn into_release(self) -> Option<UpdateInfo> {
+        match self {
+            Self::Checked(release) => release,
+            Self::MissingAsset { .. } => None,
+        }
+    }
+
+    pub(super) fn failed_download(
+        selected: UpdateInfo,
+        transfer_started_at: DateTime<Utc>,
+    ) -> Self {
+        Self::MissingAsset {
+            retry_after: Utc::now() + MISSING_ASSET_RETRY,
+            checked_at: None,
+            failed_asset: selected.asset_api_url,
+            failed_transfer_started_at: Some(transfer_started_at),
+            failed_version: Some(selected.version),
+        }
+    }
+}
+
+// Cached results reuse the time of their original check.
+#[derive(Debug)]
+pub(super) struct ReleasePayload {
+    pub(super) release: Option<UpdateInfo>,
+    pub(super) checked_at: Option<DateTime<Utc>>,
+}
+
+type ReleasePayloadResult = Result<ReleasePayload>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(super) struct UpdaterState {
     pub(super) last_check: Cell<Option<DateTime<Utc>>>,
+
+    #[serde(default)]
+    pub(super) last_successful_check: Cell<Option<DateTime<Utc>>>,
 
     current_version: Version,
 
@@ -45,6 +109,10 @@ impl UpdaterState {
             .map(|ui| ui.version().clone())
     }
 
+    pub(super) fn set_available_release(&self, release: Option<UpdateInfo>) {
+        *self.avail_release.borrow_mut() = release;
+    }
+
     pub(super) fn borrow_worker(&self) -> Ref<'_, Option<MPSCState>> {
         self.worker_state.borrow()
     }
@@ -53,11 +121,12 @@ impl UpdaterState {
         self.worker_state.borrow_mut()
     }
 
-    pub(super) fn download_url(&self) -> Option<Url> {
+    pub(super) fn newer_release(&self) -> Option<UpdateInfo> {
         self.avail_release
             .borrow()
             .as_ref()
-            .map(|info| info.downloadable_url.clone())
+            .filter(|info| info.is_newer_than(self.current_version()))
+            .cloned()
     }
 }
 
@@ -69,7 +138,15 @@ pub(super) struct UpdateInfo {
     pub fetched_at: Option<DateTime<Utc>>,
 
     // Link to use to download the above version
-    pub downloadable_url: Url,
+    pub(super) downloadable_url: Url,
+
+    // Older cache files have only the browser URL, which can be reused by replacements.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) asset_api_url: Option<Url>,
+
+    // A successful byte transfer is stronger evidence than a metadata-only check.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(super) asset_verified_at: Option<DateTime<Utc>>,
 }
 
 impl UpdateInfo {
@@ -78,11 +155,26 @@ impl UpdateInfo {
             version: v,
             fetched_at: None,
             downloadable_url: url,
+            asset_api_url: None,
+            asset_verified_at: None,
         }
     }
 
     pub(super) fn version(&self) -> &Version {
         &self.version
+    }
+
+    pub(super) fn is_newer_than(&self, current: &Version) -> bool {
+        version_precedes(current, self.version())
+    }
+
+    pub(super) fn matches_asset(&self, other: &Self) -> bool {
+        self.version == other.version
+            && match (&self.asset_api_url, &other.asset_api_url) {
+                (Some(selected), Some(current)) => selected == current,
+                (None, None) => self.downloadable_url == other.downloadable_url,
+                _ => false,
+            }
     }
 
     pub(super) fn fetched_at(&self) -> Option<&DateTime<Utc>> {
@@ -92,6 +184,12 @@ impl UpdateInfo {
     pub(super) fn set_fetched_at(&mut self, date_time: DateTime<Utc>) {
         self.fetched_at = Some(date_time);
     }
+}
+
+pub(super) fn version_precedes(earlier: &Version, later: &Version) -> bool {
+    // Build metadata does not affect semantic version precedence.
+    (earlier.major, earlier.minor, earlier.patch, &earlier.pre)
+        < (later.major, later.minor, later.patch, &later.pre)
 }
 
 #[derive(Debug)]
@@ -119,31 +217,36 @@ where
         let _ = env_logger::try_init();
         if let Ok(mut saved_state) = Self::load() {
             // Use the version that workflow reports through environment variable
-            // This version takes priortiy over what we may have saved last time.
-            let env_ver = env::workflow_version().and_then(|v| Version::parse(&v).ok());
+            // This version takes priority over what we may have saved last time.
+            let env_ver = env::workflow_version()
+                .map(|v| parse_workflow_version(&v))
+                .transpose()?;
             if let Some(v) = env_ver {
                 saved_state.current_version = v;
             }
             Ok(Updater {
                 state: saved_state,
                 releaser: RefCell::new(r),
+                expected_bundle_id: None,
+                required_executable: None,
             })
         } else {
             let current_version = env::workflow_version()
-                .map_or_else(|| Ok(Version::new(0, 0, 0)), |v| Version::parse(&v))?;
+                .map_or_else(|| Ok(Version::new(0, 0, 0)), |v| parse_workflow_version(&v))?;
             let state = UpdaterState {
                 current_version,
                 last_check: Cell::new(None),
+                last_successful_check: Cell::new(None),
                 avail_release: RefCell::new(None),
                 worker_state: RefCell::new(None),
                 update_interval: UPDATE_INTERVAL,
             };
-            let updater = Updater {
+            Ok(Updater {
                 state,
                 releaser: RefCell::new(r),
-            };
-            updater.save()?;
-            Ok(updater)
+                expected_bundle_id: None,
+                required_executable: None,
+            })
         }
     }
 
@@ -172,10 +275,17 @@ where
     // Save updater's state
     pub(super) fn save(&self) -> Result<()> {
         let data_file_path = Self::build_data_fn()?;
-        crate::Data::save_to_file(&data_file_path, &self.state).map_err(|e| {
-            let _r = remove_file(data_file_path);
-            e
-        })
+        crate::Data::save_to_file(data_file_path, &self.state)
+    }
+
+    pub(super) fn release_cache_path() -> Result<PathBuf> {
+        Ok(Self::build_data_fn()?.with_file_name(LATEST_UPDATE_INFO_CACHE_FN_ASYNC))
+    }
+
+    pub(super) fn release_cache() -> Option<ReleaseCache> {
+        Self::release_cache_path()
+            .ok()
+            .and_then(crate::Data::load_from_file)
     }
 
     pub(super) fn start_releaser_worker(
@@ -186,16 +296,70 @@ where
         use std::thread;
 
         let releaser = (*self.releaser.borrow()).clone();
+        let expected_bundle_id = self.expected_bundle_id.clone();
+        let required_executable = self.required_executable.clone();
+        let (previous_offer, retrying_missing_asset, failed_asset) = match Self::release_cache() {
+            Some(ReleaseCache::MissingAsset { failed_asset, .. }) => (None, true, failed_asset),
+            Some(ReleaseCache::Checked(offer)) => (offer, false, None),
+            None => (None, false, None),
+        };
 
         thread::Builder::new().spawn(move || {
             debug!("other thread: starting in updater thread");
             let talk_to_mother = || -> Result<()> {
-                let (v, url) = releaser.latest_release()?;
-                let mut info = UpdateInfo::new(v, url);
-                info.set_fetched_at(Utc::now());
-                let payload = Some(info);
-                Self::write_last_check_status(&p, &payload)?;
-                tx.send(Ok(payload))?;
+                let mut latest = releaser.check_latest_release()?;
+                let mut verified_at = None;
+                if let ReleaseCheck::Available {
+                    version,
+                    asset_api_url: Some(asset),
+                    ..
+                } = &latest
+                {
+                    if Some(asset) == failed_asset.as_ref() {
+                        let verification_started_at = Utc::now();
+                        if super::verify_recovering_asset(
+                            asset,
+                            version,
+                            expected_bundle_id.as_deref(),
+                            required_executable.as_deref(),
+                        )? {
+                            verified_at = Some(verification_started_at);
+                        } else {
+                            latest = ReleaseCheck::MissingAsset;
+                        }
+                    }
+                }
+                // A caller waiting during asset verification can reuse the completed check.
+                let checked_at = Utc::now();
+                let cache = match latest {
+                    ReleaseCheck::Available {
+                        version,
+                        download_url,
+                        asset_api_url,
+                    } => {
+                        let mut info = UpdateInfo::new(version, download_url);
+                        info.asset_api_url = asset_api_url;
+                        info.set_fetched_at(checked_at);
+                        info.asset_verified_at = verified_at.or_else(|| {
+                            previous_offer
+                                .as_ref()
+                                .filter(|previous| previous.matches_asset(&info))
+                                .and_then(|previous| previous.asset_verified_at)
+                        });
+                        ReleaseCache::Checked(Some(info))
+                    }
+                    ReleaseCheck::Unavailable if !retrying_missing_asset => {
+                        ReleaseCache::Checked(None)
+                    }
+                    ReleaseCheck::Unavailable | ReleaseCheck::MissingAsset => {
+                        ReleaseCache::missing_asset(checked_at, Some(checked_at), failed_asset)
+                    }
+                };
+                crate::Data::save_to_file(&p, &cache)?;
+                tx.send(Ok(ReleasePayload {
+                    release: cache.into_release(),
+                    checked_at: Some(checked_at),
+                }))?;
                 Ok(())
             };
 
@@ -215,10 +379,7 @@ where
         p: &Path,
         updater_info: &Option<UpdateInfo>,
     ) -> Result<()> {
-        crate::Data::save_to_file(p, updater_info).map_err(|e| {
-            let _r = remove_file(p);
-            e
-        })
+        crate::Data::save_to_file(p, updater_info)
     }
 
     // read version of latest avail. release (if any) from a cache file
@@ -265,27 +426,26 @@ where
                         .and_then(|rx| {
                             let rr = if try_flag {
                                 // don't block while trying to receive
-                                rx.try_recv().map_err(|e| anyhow!(e.to_string()))
+                                rx.try_recv().map_err(anyhow::Error::new)
                             } else {
                                 // block while waiting to receive
                                 rx.recv().map_err(|e| anyhow!(e.to_string()))
                             };
                             rr.and_then(|msg| {
-                                let msg_status = msg.map(|update_info| {
+                                let msg_status = msg.map(|payload| {
                                     // received good message, update cache for received payload
-                                    *self.state.avail_release.borrow_mut() = update_info.clone();
-                                    // update last_check if received info is newer than last_check
-                                    update_info.as_ref().map(|ui| {
-                                        ui.fetched_at().map(|fetched_time| {
-                                            if self.last_check().is_none()
-                                                || self.last_check().as_ref().unwrap()
-                                                    < fetched_time
-                                            {
-                                                self.set_last_check(*fetched_time);
-                                            }
-                                        })
-                                    });
-                                    *mpsc.recvd_payload.borrow_mut() = Some(Ok(update_info));
+                                    self.state.set_available_release(payload.release.clone());
+                                    if let Some(checked_at) = payload.checked_at {
+                                        if self.last_check().map_or(true, |last| last < checked_at)
+                                        {
+                                            self.set_last_check(checked_at);
+                                        }
+                                        let last_success = self.state.last_successful_check.get();
+                                        self.state
+                                            .last_successful_check
+                                            .set(last_success.max(Some(checked_at)));
+                                    }
+                                    *mpsc.recvd_payload.borrow_mut() = Some(Ok(payload));
                                 });
                                 // save state regardless of content of msg
                                 self.save()?;
@@ -301,44 +461,9 @@ where
             .avail_release
             .borrow()
             .as_ref()
-            .map_or(false, |release| *self.current_version() < release.version))
-    }
-
-    #[allow(dead_code)]
-    #[deprecated(note = "update_ready_async is deprecated. use init()")]
-    pub(super) fn _update_ready_async(&self) -> Result<bool> {
-        let worker_state = self.state.worker_state.borrow();
-        assert!(worker_state.is_some(), "you need to use init first");
-
-        let mpsc = worker_state.as_ref().expect("no worker_state");
-        if mpsc.recvd_payload.borrow().is_none() {
-            let rx_option = mpsc.rx.borrow();
-            let rx = rx_option.as_ref().unwrap();
-            let rr = rx.recv();
-            if rr.is_ok() {
-                let msg = rr.as_ref().unwrap();
-                if msg.is_ok() {
-                    let update_info = msg.as_ref().unwrap();
-                    *self.state.avail_release.borrow_mut() = update_info.clone();
-                    *mpsc.recvd_payload.borrow_mut() = Some(Ok(update_info.clone()));
-                } else {
-                    return Err(anyhow!(format!("{:?}", msg.as_ref().unwrap_err())));
-                }
-                self.save()?;
-            } else {
-                eprintln!("{:?}", rr);
-                return Err(anyhow!(format!("{:?}", rr)));
-            }
-        }
-        if let Some(ref updater_info) = *self.state.avail_release.borrow() {
-            if *self.current_version() < updater_info.version {
-                Ok(true)
-            } else {
-                Ok(false)
-            }
-        } else {
-            Ok(false)
-        }
+            .map_or(false, |release| {
+                release.is_newer_than(self.current_version())
+            }))
     }
 
     #[allow(dead_code)]

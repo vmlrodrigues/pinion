@@ -14,16 +14,23 @@ use std::io::Write;
 impl Runner<'_, '_> {
     pub fn delete(&mut self, cmd: SubCommand) {
         debug!("Starting in delete");
-        let SubCommand::Delete { url, tag } = cmd else {
+        let SubCommand::Delete {
+            url,
+            tag,
+            expected_account,
+            passive_preview,
+            ..
+        } = cmd
+        else {
             unreachable!()
         };
-        match self.perform_delete(url, tag) {
+        match self.perform_delete(url, tag, expected_account.as_deref(), passive_preview) {
             Ok(s) if !s.is_empty() => {
                 io::stdout()
                     .write_all(s.as_bytes())
                     .expect("Couldn't write to stdout");
                 if self.config.as_ref().unwrap().auto_update_cache {
-                    self.update_cache(false);
+                    self.refresh_after_write();
                 }
             }
             Err(e) => {
@@ -40,8 +47,18 @@ impl Runner<'_, '_> {
         &mut self,
         url: Option<String>,
         tag: Option<String>,
+        expected_account: Option<&str>,
+        passive_preview: bool,
     ) -> Result<String, Box<dyn std::error::Error>> {
+        let account = self.config.as_ref().unwrap().pinboard_username()?;
+        if expected_account.is_some_and(|selected| selected != account) {
+            return Err(AlfredError::DeleteFailed(
+                "The Pinboard account changed. Select the bookmark again.".into(),
+            )
+            .into());
+        }
         if let Some(tag) = tag {
+            let _mutation = self.lock_bookmark_mutations()?;
             debug!("  tag: {}", tag);
             self.pinboard
                 .as_ref()
@@ -54,6 +71,7 @@ impl Runner<'_, '_> {
             return Ok("Successfully deleted tag.".to_string());
         }
         if let Some(url) = url {
+            let _mutation = self.lock_bookmark_mutations()?;
             debug!("  url: {}", url);
             self.pinboard.as_ref().unwrap().delete(&url).map_err(|e| {
                 error!("{}", crate::redact_token(&e.to_string()));
@@ -61,31 +79,43 @@ impl Runner<'_, '_> {
             })?;
             Ok("Successfully deleted bookmark.".to_string())
         } else {
-            let tab_info;
-            let item = match browser_info::get() {
-                Ok(browser_tab_info) => {
-                    tab_info = browser_tab_info;
-                    ItemBuilder::new(tab_info.title.as_str())
-                        .subtitle(tab_info.url.as_str())
-                        .arg(tab_info.url.as_str())
-                        .quicklook_url(tab_info.url.as_str())
-                        .text_large_type(tab_info.title.as_str())
-                        .text_copy(tab_info.url.as_str())
-                        .icon_path("bookmark-delete.png")
-                        .into_item()
-                }
-                Err(e) => {
-                    error!("Couldn't get browser info: {:?}", e);
-                    ItemBuilder::new("Couldn't get browser's info!")
-                        .subtitle(e.to_string())
-                        .icon_path("erroricon.icns")
-                        .into_item()
-                }
-            };
-            if let Err(e) = self.write_output_items(vec![item], Option::<Vec<(&str, &str)>>::None) {
-                error!("delete: Couldn't write to Alfred: {:?}", e);
-            }
+            self.preview(account, passive_preview);
             Ok(String::new())
         }
+    }
+
+    fn preview(&self, account: &str, passive: bool) {
+        use browser_info::BrowserLookup;
+
+        let result = if passive {
+            browser_info::get_passive()
+        } else {
+            browser_info::get().map(BrowserLookup::Tab)
+        };
+        let item = match result {
+            Ok(BrowserLookup::Tab(tab)) => ItemBuilder::new(tab.title.clone())
+                .subtitle(tab.url.clone())
+                .arg(tab.url.clone())
+                .quicklook_url(tab.url.clone())
+                .text_large_type(tab.title)
+                .text_copy(tab.url)
+                .variable("pinion_delete_account", account)
+                .variable("pinion_delete_direct", "0")
+                .icon_path("bookmark-delete.png"),
+            Ok(BrowserLookup::NeedsInteraction(_)) => {
+                ItemBuilder::new("Can't preview deletion from this browser")
+                    .subtitle("Find the bookmark with ps, then choose Delete Pinboard Bookmark.")
+                    .icon_path("erroricon.icns")
+                    .valid(false)
+            }
+            Err(error) => {
+                error!("Couldn't get browser info: {:?}", error);
+                ItemBuilder::new("Couldn't get browser's info!")
+                    .subtitle(error.to_string())
+                    .icon_path("erroricon.icns")
+                    .valid(false)
+            }
+        };
+        self.write_output_items([item.into_item()], None::<[(&str, &str); 0]>);
     }
 }

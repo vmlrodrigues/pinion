@@ -6,6 +6,54 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-11-15
+
+### Added
+- Remember bookmarks opened from `ps` and `pt`, and rank recent opens within each
+  group of matches. More exact tag matches come first, and repeated bookmark URLs
+  use one result slot. Opening a bookmark stays responsive when history is busy.
+
+### Fixed
+- Pick up bookmarks saved on other devices when searching or browsing tags. Keep a
+  separate cache per account and retain the last valid cache when a refresh fails
+  or Pinboard returns evidence that bookmarks or tags are missing.
+  Preserve known tags when current tag fields are unreadable, and require a valid
+  empty bookmark lookup before confirming deletion during older-cache migration.
+  Let the first download finish if the Alfred search closes, retry deferred downloads
+  after transient errors, and pace Pinboard requests across background checks and
+  bookmark actions. Let saves proceed while background reads are waiting on Pinboard.
+  Keep retrying incomplete downloads and reconcile periodically when the last-update
+  endpoint is unavailable. Keep an open search retrying after a failed timestamp
+  check (including one started by `pu`) or interrupted worker. Respect Pinboard's
+  retry deadline during outages and use fallback backoff if a rate-limit deadline has expired.
+- Refresh the current page's bookmark indicator when a new snapshot arrives and
+  match the full URL, including the case of its path and query.
+- Keep popular tag suggestions tied to the current editing session and retry them
+  after temporary server or network failures. Let the first bookmark download finish
+  if either tag rename filter closes. Show the `pind` delete preview without downloading
+  the bookmark cache or using keyboard and clipboard automation. Defer that automation
+  in `p` until the user selects Save. Omit blank tag results and require explicit input
+  to save without tags. Tag renaming uses the bundled binary without a Python dependency.
+- Rank exact tag matches ahead of fuzzy matches in bookmark search. Treat leading
+  hyphens in Alfred searches as part of the query.
+- Show setup failures from `pu`, `pupdate`, `p`, and title saves as Alfred errors.
+  Say when a partial refresh needs a manual retry.
+- Prefill bookmark title edits and accept titles beginning with a hyphen. Keep the
+  current Pinboard metadata and ask the user to reopen the editor if the title or
+  account changed while it was open. Serialize local bookmark changes so overlapping
+  saves cannot replace each other's metadata. Reject null notes in lookup responses
+  before replacing a bookmark.
+- Check GitHub on the first `pcheck` and offer downloads only for newer versions.
+  Automatic GitHub checks run in the background while Alfred shows search results.
+  Remove withdrawn releases from the offer and verify the selected version before
+  downloading it, even if the cache was cleared. Check the exact GitHub asset when
+  selected and before opening the bundle in Alfred. Reuse a successful background
+  check when it finishes while `pcheck` is waiting. Retry missing assets without
+  displaying them while their download is unavailable, and check again if the cached
+  release result is lost. Validate the workflow archive before opening it in Alfred
+  and reject alternate ZIP filename overrides. Prune obsolete downloads.
+  Update rows ignore bookmark modifiers.
+
 ## [0.27.1] - 2026-08-16
 ### Fixed
 - Renaming a title now shows you the title you are renaming. The field opened empty, so

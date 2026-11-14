@@ -23,8 +23,7 @@ jobs:
       - name: Install pinned toolchain
         run: rustup show
 
-      # Scoped to this package on purpose: `--all` would also format and lint the
-      # crates under vendor/, which we deliberately keep close to upstream.
+      # Scope formatting and lint diagnostics to Pinion. CI executes the vendored suites separately.
       - name: Run cargo fmt
         run: cargo fmt -p pinion -- --check
 
@@ -34,10 +33,10 @@ jobs:
       # `-D warnings` re-promotes anything at warn level no matter where the
       # flags are ordered.
       - name: Run clippy
-        run: cargo clippy -p pinion --tests -- -Dclippy::all -D warnings -Aclippy::pedantic
+        run: cargo clippy --locked -p pinion --no-deps --tests -- -Dclippy::all -D warnings -Aclippy::pedantic
 
       # Advisory only. Pedantic is opinionated by design and its membership
       # grows every release, so it reports without ever failing the build.
       - name: Run pedantic clippy (advisory)
         continue-on-error: true
-        run: cargo clippy -p pinion --tests -- -Wclippy::pedantic
+        run: cargo clippy --locked -p pinion --no-deps --tests -- -Wclippy::pedantic

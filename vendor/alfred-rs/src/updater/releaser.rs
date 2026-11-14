@@ -1,8 +1,9 @@
-use super::{anyhow, reqwest, semver, serde_json, url, Result};
+use super::{anyhow, parse_workflow_version, reqwest, semver, serde_json, url, Result};
 #[cfg(test)]
 use mockito;
 use semver::Version;
 use std::cell::RefCell;
+use std::time::Duration;
 use url::Url;
 
 #[cfg(not(test))]
@@ -14,6 +15,21 @@ const GITHUB_LATEST_RELEASE_ENDPOINT: &str = "/releases/latest";
 static MOCKITO_URL: &str = mockito::SERVER_URL;
 #[cfg(test)]
 pub const MOCK_RELEASER_REPO_NAME: &str = "MockZnVja29mZg==fd850fc2e63511e79f720023dfdf24ec";
+
+/// Result of a successful workflow release check.
+pub enum ReleaseCheck {
+    /// A release with an uploaded workflow file.
+    Available {
+        version: Version,
+        download_url: Url,
+        /// The immutable asset identity for releasers that expose one.
+        asset_api_url: Option<Url>,
+    },
+    /// A release exists, but its workflow file could still be uploading.
+    MissingAsset,
+    /// The server has no release to offer.
+    Unavailable,
+}
 
 /// An interface for checking with remote servers to identify the latest release for an
 /// Alfred workflow.
@@ -53,6 +69,34 @@ pub trait Releaser: Clone {
         let (v, url) = self.fetch_latest_release()?;
         Ok((v.into(), url.into()))
     }
+
+    /// Check whether a release and its workflow file are available.
+    ///
+    /// Transient failures are returned as errors so a previously checked release
+    /// can remain available.
+    fn check_latest_release(&self) -> Result<ReleaseCheck> {
+        let (version, download_url) = self.latest_release()?;
+        Ok(ReleaseCheck::Available {
+            version,
+            download_url,
+            asset_api_url: None,
+        })
+    }
+
+    /// Whether a fresh release check supplies immutable asset identities.
+    fn provides_asset_identity(&self) -> bool {
+        false
+    }
+}
+
+/// Whether GitHub confirms that a release or asset is missing.
+pub fn is_missing_response(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<reqwest::Error>()
+        .and_then(reqwest::Error::status)
+        .map_or(false, |status| {
+            status == reqwest::StatusCode::NOT_FOUND || status == reqwest::StatusCode::GONE
+        })
 }
 
 /// Struct to handle checking and finding release files from `github.com`
@@ -84,8 +128,7 @@ pub struct ReleaseItem {
 /// A single downloadable asset.
 #[derive(Debug, Serialize, Deserialize, Clone)]
 struct ReleaseAsset {
-    url: String,
-    name: String,
+    url: Url,
     state: String,
     browser_download_url: String,
 }
@@ -94,6 +137,7 @@ impl GithubReleaser {
     fn latest_release_data(&self) -> Result<()> {
         debug!("starting latest_release_data");
         let client = reqwest::blocking::Client::builder()
+            .timeout(Duration::from_secs(10))
             .user_agent(concat!(
                 env!("CARGO_PKG_NAME"),
                 "/",
@@ -117,20 +161,15 @@ impl GithubReleaser {
             .error_for_status()
             .map_err(Into::into)
             .and_then(|resp| {
-                let mut latest: ReleaseItem = serde_json::from_reader(resp)?;
-                if latest.tag_name.starts_with('v') {
-                    latest.tag_name.remove(0);
-                }
+                let latest: ReleaseItem = serde_json::from_reader(resp)?;
                 debug!("  release item: {:?}", latest);
                 *self.latest_release.borrow_mut() = Some(latest);
                 Ok(())
             })
     }
 
-    // This implementation of Releaser will favor urls that end with `alfredworkflow`
-    // over `alfredworkflow`
-    fn downloadable_url(&self) -> Result<Url> {
-        debug!("starting download_url");
+    // Favor the unversioned Alfred workflow extension when several are present.
+    fn downloadable_asset(&self) -> Result<Option<(Url, Url)>> {
         self.latest_release
             .borrow()
             .as_ref()
@@ -140,8 +179,7 @@ impl GithubReleaser {
             )
             })
             .and_then(|r| {
-                let urls = r
-                    .assets
+                r.assets
                     .iter()
                     .filter(|asset| {
                         asset.state == "uploaded"
@@ -149,18 +187,9 @@ impl GithubReleaser {
                                 || asset.browser_download_url.ends_with("alfred3workflow")
                                 || asset.browser_download_url.ends_with("alfred4workflow"))
                     })
-                    .map(|asset| &asset.browser_download_url)
-                    .collect::<Vec<&String>>();
-                debug!("  collected release urls: {:?}", urls);
-                match urls.len() {
-                    0 => Err(anyhow!("no usable download url")),
-                    1 => Ok(Url::parse(urls[0])?),
-                    _ => {
-                        let url = urls.iter().find(|item| item.ends_with("alfredworkflow"));
-                        let u = url.unwrap_or(&urls[0]);
-                        Ok(Url::parse(u)?)
-                    }
-                }
+                    .min_by_key(|asset| !asset.browser_download_url.ends_with("alfredworkflow"))
+                    .map(|asset| Ok((Url::parse(&asset.browser_download_url)?, asset.url.clone())))
+                    .transpose()
             })
     }
 
@@ -170,13 +199,12 @@ impl GithubReleaser {
             self.latest_release_data()?;
         }
 
-        let latest_version = self
-            .latest_release
-            .borrow()
+        let release = self.latest_release.borrow();
+        let tag = &release
             .as_ref()
-            .map(|r| Version::parse(&r.tag_name).ok())
-            .ok_or_else(|| anyhow!("Couldn't parse fetched version."))?
-            .unwrap();
+            .ok_or_else(|| anyhow!("No release information is available."))?
+            .tag_name;
+        let latest_version = parse_workflow_version(tag)?;
         debug!("  latest version: {:?}", latest_version);
         Ok(latest_version)
     }
@@ -193,28 +221,50 @@ impl Releaser for GithubReleaser {
         }
     }
 
+    fn provides_asset_identity(&self) -> bool {
+        true
+    }
+
     fn fetch_latest_release(&self) -> Result<(Version, Url)> {
-        if self.latest_release.borrow().is_none() {
-            self.latest_release_data()?;
-        }
         let version = self.latest_version()?;
-        let link = self.downloadable_url()?;
+        let (link, _) = self
+            .downloadable_asset()?
+            .ok_or_else(|| anyhow!("no usable download url"))?;
         Ok((version, link))
+    }
+
+    fn check_latest_release(&self) -> Result<ReleaseCheck> {
+        match self.latest_release_data() {
+            Err(error) if is_missing_response(&error) => {
+                *self.latest_release.borrow_mut() = None;
+                return Ok(ReleaseCheck::Unavailable);
+            }
+            result => result?,
+        }
+        // Check for an asset before parsing the tag. A release without a
+        // workflow file cannot be offered even if its tag is invalid.
+        Ok(match self.downloadable_asset()? {
+            Some((download_url, asset_api_url)) => ReleaseCheck::Available {
+                version: self.latest_version()?,
+                download_url,
+                asset_api_url: Some(asset_api_url),
+            },
+            None => ReleaseCheck::MissingAsset,
+        })
     }
 }
 
 #[cfg(test)]
 pub mod tests {
     use super::*;
-    use mockito::{mock, Matcher, Mock};
+    use mockito::{mock, Mock};
 
     #[test]
     fn it_tests_releaser() {
         let _m = setup_mock_server(200);
         let releaser = GithubReleaser::new(MOCK_RELEASER_REPO_NAME);
 
-        // Calling downloadable_url before checking for latest_version will return error
-        assert!(releaser.downloadable_url().is_err());
+        assert!(releaser.downloadable_asset().is_err());
 
         assert!(
             releaser
@@ -223,18 +273,29 @@ pub mod tests {
                 > Version::new(0, 11, 0)
         );
 
-        assert_eq!("http://127.0.0.1:1234/releases/download/v0.11.1/alfred-pinboard-rust-v0.11.1.alfredworkflow",
-                   releaser.downloadable_url().unwrap().as_str());
+        let (url, asset_api_url) = releaser.downloadable_asset().unwrap().unwrap();
+        assert_eq!("http://127.0.0.1:1234/releases/download/v0.11.1/alfred-pinboard-rust-v0.11.1.alfredworkflow", url.as_str());
+        assert_eq!(
+            asset_api_url.as_str(),
+            "http://127.0.0.1:1234/releases/assets/6847236"
+        );
+    }
+
+    #[test]
+    fn it_reports_invalid_release_versions() {
+        let _release = mock("GET", "/releases/latest")
+            .with_status(200)
+            .with_body(include_str!("../../tests/latest.json").replace("v0.11.1", "rolling"))
+            .create();
+        let releaser = GithubReleaser::new(MOCK_RELEASER_REPO_NAME);
+
+        assert!(releaser.fetch_latest_release().is_err());
     }
 
     pub fn setup_mock_server(status_code: usize) -> Mock {
-        mock(
-            "GET",
-            Matcher::Regex(r"^/releases/(latest|download).*$".to_string()),
-        )
-        .with_status(status_code)
-        .with_header("content-type", "application/json")
-        .with_body(include_str!("../../tests/latest.json"))
-        .create()
+        mock("GET", "/releases/latest")
+            .with_status(status_code)
+            .with_body(include_str!("../../tests/latest.json"))
+            .create()
     }
 }

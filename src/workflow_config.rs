@@ -1,4 +1,3 @@
-use chrono::prelude::*;
 use core::fmt;
 use dirs::home_dir;
 use std::fs::{create_dir_all, File};
@@ -31,7 +30,6 @@ impl fmt::Debug for Config {
             .field("page_is_bookmarked", &self.page_is_bookmarked)
             .field("show_url_vs_tags", &self.show_url_vs_tags)
             .field("auto_update_cache", &self.auto_update_cache)
-            .field("update_time", &self.update_time)
             .field("workflow_data_dir", &self.workflow_data_dir)
             .field("workflow_cache_dir", &self.workflow_cache_dir)
             .finish_non_exhaustive()
@@ -73,9 +71,6 @@ pub struct Config {
     /// here again would put it back in plaintext on disk. See `resolve_token`.
     #[serde(default, skip_serializing)]
     pub auth_token: String,
-    /// Last time cache was updated
-    #[serde(default = "get_epoch")]
-    pub update_time: DateTime<Utc>,
     /// Whether the one-time copy of these settings into Alfred's workflow
     /// configuration sheet has already happened. See `migrate_to_alfred_config`.
     #[serde(default)]
@@ -90,7 +85,8 @@ pub struct Config {
 impl Config {
     pub fn new() -> Self {
         debug!("Starting in new");
-        let mut cfg = Config {
+        let (workflow_data_dir, workflow_cache_dir) = Self::get_workflow_dirs();
+        Config {
             alfred_version: get_alfred_version(),
             pins_to_show: 10,
             tags_to_show: 10,
@@ -103,15 +99,12 @@ impl Config {
             auto_update_cache: true,
             show_url_vs_tags: true,
             auth_token: String::new(),
-            update_time: get_epoch(),
             // A fresh install has nothing to migrate: Alfred's configuration
             // sheet already holds the workflow's defaults.
             migrated_to_alfred_config: true,
-            workflow_data_dir: PathBuf::default(),
-            workflow_cache_dir: PathBuf::default(),
-        };
-        cfg.discover_dirs();
-        cfg
+            workflow_data_dir,
+            workflow_cache_dir,
+        }
     }
 
     pub fn setup() -> Result<Config, Box<dyn std::error::Error>> {
@@ -159,7 +152,13 @@ impl Config {
     ) -> Result<Config, Box<dyn std::error::Error>> {
         debug!("Starting in read");
         data_dir.push(CONFIG_FILE_NAME);
-        if data_dir.exists() {
+        let settings_exist = data_dir.try_exists().map_err(|error| {
+            std::io::Error::new(
+                error.kind(),
+                format!("Couldn't read Pinion settings: {error}"),
+            )
+        })?;
+        if settings_exist {
             let config = Data::load(&data_dir)?;
             let config: Result<Config, Box<dyn std::error::Error>> = config
                 .get(CONFIG_KEY_NAME)
@@ -193,13 +192,6 @@ impl Config {
         let mut mydata = Data::load(CONFIG_FILE_NAME)?;
         mydata.clear();
         mydata.set(CONFIG_KEY_NAME, self).map_err(Into::into)
-    }
-
-    pub fn discover_dirs(&mut self) {
-        debug!("Starting in discover_dirs");
-        let dirs = Config::get_workflow_dirs();
-        self.workflow_data_dir = dirs.0;
-        self.workflow_cache_dir = dirs.1;
     }
 
     /// Resolve the API token, moving it out of `settings.json` and into the
@@ -403,9 +395,31 @@ impl Config {
         }
     }
 
-    #[allow(dead_code)]
-    pub fn cache_dir(&self) -> &PathBuf {
-        &self.workflow_cache_dir
+    pub fn pinboard_username(&self) -> Result<&str, AlfredError> {
+        pinboard_username(&self.auth_token)
+    }
+
+    pub fn bookmark_cache_dir(&self) -> Result<PathBuf, AlfredError> {
+        Ok(Self::pinboard_account_dir(
+            &self.workflow_cache_dir,
+            self.pinboard_username()?,
+        ))
+    }
+
+    pub(crate) fn bookmark_history_dir(&self, username: &str) -> PathBuf {
+        Self::pinboard_account_dir(&self.workflow_data_dir, username)
+    }
+
+    fn pinboard_account_dir(root: &std::path::Path, username: &str) -> PathBuf {
+        use std::fmt::Write;
+
+        // Hex keeps usernames distinct even on case-insensitive filesystems and
+        // makes every username a single path component. The token stays in Keychain.
+        let mut account = String::with_capacity(2 * username.len());
+        for byte in username.bytes() {
+            write!(account, "{byte:02x}").expect("writing to a String cannot fail");
+        }
+        root.join("pinboard-accounts").join(account)
     }
 
     pub fn data_dir(&self) -> &PathBuf {
@@ -436,11 +450,6 @@ impl Config {
             dir
         });
         debug!("cache_dir: {}", cache_dir.to_string_lossy());
-        if !cache_dir.exists() {
-            // If we can't create directories, workflow won't be able to work, so we panic!
-            debug!("creating cache_dir");
-            create_dir_all(&cache_dir).unwrap();
-        }
         let data_dir = alfred::env::workflow_data().unwrap_or_else(|| {
             let mut dir = home_dir().unwrap_or_else(|| PathBuf::from(""));
             dir.push(".config");
@@ -448,14 +457,17 @@ impl Config {
             dir
         });
         debug!("data_dir: {}", data_dir.to_string_lossy());
-        if !data_dir.exists() {
-            // If we can't create directories, workflow won't be able to work, so we panic!
-            debug!("creating data_dir");
-            create_dir_all(&data_dir).unwrap();
-        }
 
         (data_dir, cache_dir)
     }
+}
+
+pub(crate) fn pinboard_username(auth_token: &str) -> Result<&str, AlfredError> {
+    auth_token
+        .split_once(':')
+        .filter(|(username, token)| !username.is_empty() && !token.is_empty())
+        .map(|(username, _)| username)
+        .ok_or(AlfredError::InvalidAuthToken)
 }
 
 /// Keys of the workflow-configuration entries Alfred exports to us as
@@ -524,13 +536,6 @@ fn get_alfred_version() -> Version {
                 })
         })
     })
-}
-
-fn get_epoch() -> DateTime<Utc> {
-    debug!("Starting in get_epoch");
-    "1970-01-01T23:00:00Z"
-        .parse::<DateTime<Utc>>()
-        .expect("Couldn't create UTC epoch time")
 }
 
 #[cfg(test)]

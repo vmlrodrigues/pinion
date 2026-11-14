@@ -16,43 +16,56 @@
 
 ---
 
-> A fork of [spamwax/alfred-pinboard-rs](https://github.com/spamwax/alfred-pinboard-rs)
-> by Hamid R. Ghadyani, which has not had a release since June 2023. This one is kept
-> current: Helium support, the Alfred 5 settings panel, and assorted fixes. It was called
-> *Rusty Pin* upstream. The [changelog](CHANGELOG.md) has the details.
+Save a page with `p`, find it again with `ps`, or browse a single tag with `pt`.
+Exact tag matches come first, and recently opened bookmarks rise within each group.
+Pinion picks up bookmarks saved on your other devices while you search.
 
-## The name
+## Requirements
 
-**Pinion** — for three reasons, all of them true at once.
+- A Mac with [Alfred 5](https://www.alfredapp.com/) and an activated
+  [Powerpack](https://www.alfredapp.com/help/workflows/) license, which enables workflows.
+- A [Pinboard](https://pinboard.in) account and API token.
+- A [supported browser](#supported-browsers) for posting the current tab.
 
-A **pinion** is the small gear that meshes with a larger one and drives it. That is the
-job here: a little thing you barely notice, turning a much bigger wheel. It is also
-quietly apt for something written in Rust, which is a language people reach for when they
-care about the machinery.
-
-To **pinion** something is to bind it, to hold it fast so it cannot get away. Which is
-what you are doing every time you save a bookmark you would otherwise lose.
-
-And a **pinion** is the outermost set of feathers on a bird's wing — the ones that
-actually do the flying.
-
-The word also just contains *pin*, which is the whole point.
+The download supports Apple Silicon and Intel Macs. You do not need to install Rust or
+Python to use it.
 
 ## Setup
 
-Download Pinion with the button above and open it to install into Alfred.
+1. [Download the latest workflow](https://github.com/vmlrodrigues/pinion/releases/latest/download/Pinion.alfredworkflow),
+   double-click the `.alfredworkflow` file, and confirm installation in Alfred.
+2. Get your API token from [Pinboard’s settings page](https://pinboard.in/settings/password).
+   Open Alfred and type `pa` followed by the whole token, including your username:
 
-Then authenticate once. Pinion only uses Pinboard's username/token method, so you
-never type your password. Get your token from
-[Pinboard's settings page](https://pinboard.in/settings/password) — it looks like
-`yourname:A1B2C3D4E5F6G7H8I9J0` — and give it to the `pa` keyword:
+   ```
+   pa yourname:A1B2C3D4E5F6G7H8I9J0
+   ```
 
-```
-pa yourname:A1B2C3D4E5F6G7H8I9J0
-```
+   This is your Pinboard API token; you never need to enter your Pinboard password.
+3. Try `ps` followed by a tag or title you know, such as `ps rust`. To save the page
+   open in your browser, type `p rust` and press <kbd>Return</kbd>.
 
-Pinion keeps a local cache of your bookmarks and tags, and by default refreshes it
-automatically after you post. To rebuild it by hand at any time, use `pu`.
+When macOS asks to let Alfred control your browser, allow it so Pinion can read the
+current tab. [Alfred’s permissions guide](https://www.alfredapp.com/help/getting-started/permissions/)
+explains where to revisit that choice.
+
+### Bookmarks on multiple Macs
+
+Run `pa` with the same Pinboard account on each Mac, even if your Alfred preferences
+are synced. The token stays in each Mac’s Keychain; bookmarks are shared through Pinboard.
+
+Pinion keeps a local cache of your bookmarks and tags. With **Auto-update cache** enabled
+(the default), it schedules a refresh after you edit bookmarks and checks Pinboard for
+changes from other devices when you search or browse tags. Automatic full downloads are spaced
+at least five minutes apart on each Mac. Ordinary Pinboard requests share a
+three-second interval on each Mac, so saving a title can take a few seconds.
+Alfred shows cached results while a check runs and refreshes an open search when new
+bookmarks arrive. Each Pinboard account has its own cache. The first search after
+upgrading from an older version starts a fresh download for the active account. You
+can keep typing or close Alfred while it runs. Checks start when you use Pinion; it does
+not run a continuous sync service while Alfred is closed. Use `pu` to rebuild the cache
+by hand. Failed or incomplete automatic refreshes keep the last usable results and retry
+while you continue using Pinion. If authentication fails, run `pa` again.
 
 ### Where the token is kept
 
@@ -104,9 +117,13 @@ tab, so you never type those.
 p rust async
 ```
 
+New bookmarks are private by default. Successful saves are silent unless you enable
+**Notify on successful post** in [Settings](#settings); failures always notify.
+
 As you type, the workflow lists your existing tags with a count of how often you have
 used each one. Press <kbd>Tab</kbd> to autocomplete the highlighted tag, then keep
-typing to add more. Press <kbd>Return</kbd> to post.
+typing to add more. Press <kbd>Return</kbd> to post. To save without tags, type `p ;`
+and choose **Bookmark the page without tags**.
 
 To add a description, put it after a semicolon:
 
@@ -115,8 +132,9 @@ p rust async ; the tokio chapter is the useful part
 ```
 
 If tag suggestions are enabled, three popular tags for the current page are fetched from
-Pinboard and shown alongside your own. The first keystroke costs about a second while
-that request runs; later keystrokes are served from cache.
+Pinboard in the background and shown alongside your own when they arrive. You can save
+with your own tags while suggestions are loading. Suggestions retry after temporary
+failures. If you change browser tabs or Pinboard accounts before saving, open `p` again.
 
 If the page is already bookmarked, the workflow tells you. Note that it treats these as
 three distinct bookmarks and will not warn about the overlap:
@@ -144,9 +162,11 @@ configuration:
 ps rust async
 ```
 
-Results are bookmarks containing **all** your keywords, matched across title, tags, URL
-and extended notes, newest first. More keywords means fewer results. Which fields are
-searched is configurable — see [Settings](#settings).
+By default, results are bookmarks containing **all** your keywords, matched across
+title, tags, URL and extended notes. Bookmarks with more search terms matching whole tags come first.
+Within each group, Pinion puts bookmarks you opened recently ahead of other results.
+Bookmarks you haven't opened sort by when they were saved. Each Pinboard account has its
+own history on this Mac. See [Settings](#settings) to choose which fields to search.
 
 Each result shows the bookmark's title, with its tags underneath (or its URL, depending
 on your setting). Press <kbd>Return</kbd> to open it in your browser.
@@ -168,7 +188,8 @@ while still holding it to copy exactly what you are looking at.
 ### Searching a single tag
 
 `pt` searches your tags rather than your bookmarks. Pick one and press
-<kbd>Return</kbd> to list every bookmark carrying it:
+<kbd>Return</kbd> to list bookmarks carrying that exact tag, with recently opened ones
+first. The number shown under a tag is how many bookmarks use it:
 
 ```
 pt rust
@@ -205,16 +226,14 @@ The *Rename Pinboard Tag* Universal Action does the same from anywhere in Alfred
 Search with `ps`, highlight the bookmark, press <kbd>→</kbd> and choose
 **Rename Pinboard Title**.
 
-The bookmark's current title is shown straight away. Press <kbd>Tab</kbd> to load it
-into the field and edit it — useful when you are fixing a typo rather than replacing the
-whole thing — or just type a new title over the top. <kbd>Return</kbd> applies it.
+The editor opens with the current title already in the field. Edit it or type a new
+title, then press <kbd>Return</kbd> to save. If the editor has been open for more than
+ten minutes, open it again from the **Rename Pinboard Title** action.
 
-The bookmark keeps its tags, notes, privacy and read-later flag — only the title
-changes. Pinboard has no edit endpoint, so this re-posts the bookmark to the same URL
-with `replace: yes`, which is why every other field has to be carried across explicitly.
-
-If the URL isn't in your local cache the rename is refused rather than creating a new,
-empty bookmark; run `pu` and try again.
+Before saving, Pinion fetches the bookmark from Pinboard to carry forward its current
+tags, notes, privacy, read-later flag and original date. If the title or active account
+changed while the editor was open, reopen the editor to see the current title before
+saving. A bookmark deleted on another device is unavailable for renaming.
 
 ## Settings
 
@@ -233,7 +252,7 @@ write into that same panel:
 | `pset toread` | Mark new bookmarks as unread |
 | `pset check_bookmarked` | Tell me when the current page is already bookmarked |
 | `pset tagonly` | Search only the tag field, not title/URL/notes |
-| `pset auto` | Refresh the cache automatically after posting |
+| `pset auto` | Refresh the cache after posting and check for changes from other devices during search |
 | `pset url_tag` | Show tags in search subtitles, rather than URLs |
 | `pset tags 25` | How many tags to list |
 | `pset bookmarks 12` | How many bookmarks to list |
@@ -253,13 +272,15 @@ One setting has no `pset` keyword and lives only in the configuration panel:
 configuration panel automatically the first time you use the workflow. Anything you had
 already changed in the panel yourself is left alone.
 
-Your API token is not part of any of this — see below.
+Your API token is separate from these settings — see
+[Where the token is kept](#where-the-token-is-kept).
 
 ### Fuzzy versus normal search
 
-With fuzzy search **off**, `pset tgs` matches nothing, because it looks for those letters
-consecutively. With fuzzy search **on**, it matches the tag `tags`, because the letters
-appear in that order with gaps allowed.
+With fuzzy search **off**, `pt tgs` does not match the tag `tags`, because it looks
+for those letters consecutively. With fuzzy search **on**, it matches because the
+letters appear in that order with gaps allowed. Exact tag matches still rank ahead of
+fuzzy matches in `ps`.
 
 ## Supported browsers
 
@@ -272,18 +293,19 @@ Firefox and qutebrowser have caveats — see below.
 ## Known issues
 
 **Firefox.** Firefox does not support being driven by AppleScript the way other browsers
-do, so Pinion falls back to synthesising keystrokes and reading the clipboard. With
-tag suggestions or "check if bookmarked" enabled, posting from Firefox is unreliable, and
-`pind` will not work while Firefox is frontmost. Installing
-[alfred-firefox](https://github.com/deanishe/alfred-firefox) works around this — you do
-not use that workflow directly, this one borrows one of its functions.
+do, so Pinion falls back to synthesising keystrokes and reading the clipboard. In `p`,
+that fallback runs only when you choose to save and uses the browser's active tab at
+that moment. Tag suggestions and the bookmark indicator need a browser that can give
+Pinion the URL while Alfred is open. For deletion, find the bookmark with `ps` and use
+**Delete Pinboard Bookmark** on the result. Installing
+[alfred-firefox](https://github.com/deanishe/alfred-firefox) lets Pinion read the Firefox
+URL for suggestions, the indicator, and `pind`.
 
-**qutebrowser.** Same clipboard-based approach, and it clears your clipboard as a side
-effect.
+**qutebrowser.** Uses the same approach in `p`. Saving clears the clipboard as a side effect.
 
-**Gatekeeper.** If macOS says the developer cannot be verified, see
-[upstream issue #120](https://github.com/spamwax/alfred-pinboard-rs/issues/120) and this
-[Alfred forum thread](https://www.alfredforum.com/topic/13824-workflow-fail-with-developer-cannot-be-verified-errors-in-catalina/?do=findComment&comment=72101).
+**macOS blocks the workflow.** Download the current release from the button above.
+If it is still blocked, [open an issue](https://github.com/vmlrodrigues/pinion/issues)
+with the exact message and your macOS version.
 
 **Alfred 4.** This fork targets Alfred 5 and is not tested against 4. Alfred 4 users
 should use upstream's [0.16.12 release](https://github.com/spamwax/alfred-pinboard-rs/releases/tag/0.16.12),
@@ -291,9 +313,19 @@ the last version in Alfred 4 format.
 
 ## Updates
 
-Pinion checks for a newer version of itself once every 24 hours, and only when you
-actually use one of its keywords — there is no background process. `pcheck` checks
-immediately.
+Opening a Pinion search starts a background GitHub check if no successful check has
+run in the last 24 hours. If an update is available, Alfred shows a row you can select
+to download it. `pcheck` checks immediately, including the first time you run it.
+
+**Updates need your confirmation.** Select the update row to download the workflow;
+Pinion checks the bundle and opens Alfred’s installer. Choose **Update** there to finish.
+You can keep your workflow customisations in that dialog. Holding bookmark modifiers on
+an update row does not start a download.
+
+If a download fails or the offered release changes, run `pcheck` again. You can also
+[download the latest release](https://github.com/vmlrodrigues/pinion/releases/latest/download/Pinion.alfredworkflow)
+and open it yourself. Workflow update checks are separate from the **Auto-update cache**
+setting, which controls bookmark refreshes.
 
 ## Building from source
 
@@ -301,22 +333,56 @@ The toolchain is pinned in [`rust-toolchain.toml`](rust-toolchain.toml), so `car
 fetch the right version automatically.
 
 ```bash
-cargo build --release
+cargo build --locked --release
 ```
 
 The two libraries this depends on, `rusty-pin` and `alfred-rs`, are vendored under
 [`vendor/`](vendor/README.md) rather than fetched from crates.io or git. Both are
 unmaintained upstream, and `rusty-pin` in particular is published nowhere and had a
 `master` branch incompatible with this code, so any `cargo update` used to break the
-build. Vendoring makes this repository self-contained. See
-[vendor/README.md](vendor/README.md) for provenance and the handful of local changes.
+build. Vendoring keeps these two dependencies in the repository. See
+[vendor/README.md](vendor/README.md) for provenance and local changes.
+
+To run the same regressions as CI:
+
+```bash
+cargo test --locked --workspace --lib --bins -- --test-threads=1
+python3 tests/workflow_regression.py
+```
+
+The workflow suite follows the actual Alfred scripts and connections against local API
+fixtures. It runs without opening Alfred or changing your real bookmarks. Python 3 is
+needed for these development tests.
 
 Releases are built by GitHub Actions from a pushed tag — see
 [`.github/workflows/macos-universal.yml`](.github/workflows/macos-universal.yml).
+The [release procedure](RELEASING.md) covers the checks, publishing, and verification.
 
 ## Feedback
 
 [Open an issue](https://github.com/vmlrodrigues/pinion/issues).
+
+> A fork of [spamwax/alfred-pinboard-rs](https://github.com/spamwax/alfred-pinboard-rs)
+> by Hamid R. Ghadyani, which has not had a release since June 2023. This one is kept
+> current: Helium support, the Alfred 5 settings panel, and assorted fixes. It was called
+> *Rusty Pin* upstream. The [changelog](CHANGELOG.md) has the details.
+
+## The name
+
+**Pinion** — for three reasons, all of them true at once.
+
+A **pinion** is the small gear that meshes with a larger one and drives it. That is the
+job here: a little thing you barely notice, turning a much bigger wheel. It is also
+quietly apt for something written in Rust, which is a language people reach for when they
+care about the machinery.
+
+To **pinion** something is to bind it, to hold it fast so it cannot get away. Which is
+what you are doing every time you save a bookmark you would otherwise lose.
+
+And a **pinion** is the outermost set of feathers on a bird's wing — the ones that
+actually do the flying.
+
+The word also just contains *pin*, which is the whole point.
 
 ## Credits
 

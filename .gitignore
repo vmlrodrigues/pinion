@@ -6,6 +6,8 @@ auth_token.txt
 .rustfmt.toml
 build.log
 build_*.log
+# Python regression-test bytecode
+__pycache__/
 # Release bundles, whatever they are named
 *.alfredworkflow
 Cargo.toml.back

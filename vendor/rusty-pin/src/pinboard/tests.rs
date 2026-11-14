@@ -101,6 +101,81 @@ fn find_tag_test() {
 }
 
 #[test]
+fn search_prioritizes_exact_tags_over_fuzzy_matches() {
+    let cache = tempfile::tempdir().unwrap();
+    let pins: Vec<_> = [
+        (
+            "https://example.invalid/product-tech/tools",
+            "Newest fuzzy URL",
+            "",
+        ),
+        (
+            "https://example.invalid/protect/first",
+            "Newest exact tag",
+            "protect",
+        ),
+        (
+            "https://example.invalid/protective",
+            "Newer partial tag",
+            "protective",
+        ),
+        (
+            "https://example.invalid/protect/second",
+            "Older exact tag",
+            "protect",
+        ),
+    ]
+    .into_iter()
+    .map(|(url, title, tags)| CachedPin {
+        pin: PinBuilder::new(url, title).tags(tags).into_pin(),
+        title_lowered: title.to_lowercase(),
+        tag_list: tags.split_whitespace().map(str::to_owned).collect(),
+        extended_lowered: None,
+    })
+    .collect();
+    fs::write(
+        cache.path().join("pins.cache"),
+        crate::rmps::to_vec(&pins).unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        cache.path().join("tags.cache"),
+        crate::rmps::to_vec(&Vec::<Tag>::new()).unwrap(),
+    )
+    .unwrap();
+    let mut pinboard = Pinboard::new("test:token", Some(cache.path())).unwrap();
+    pinboard.enable_fuzzy_search(true);
+
+    let titles = |fields: &[SearchType]| {
+        pinboard
+            .search(&["PROTECT"], fields)
+            .unwrap()
+            .unwrap()
+            .into_iter()
+            .map(|pin| pin.title.as_ref())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(
+        titles(&[]),
+        [
+            "Newest exact tag",
+            "Older exact tag",
+            "Newest fuzzy URL",
+            "Newer partial tag"
+        ]
+    );
+    assert_eq!(
+        titles(&[SearchType::UrlOnly]),
+        [
+            "Newest fuzzy URL",
+            "Newest exact tag",
+            "Newer partial tag",
+            "Older exact tag"
+        ]
+    );
+}
+
+#[test]
 fn find_url_test() {
     let _ = env_logger::try_init();
     debug!("find_url_test: starting.");
@@ -535,11 +610,15 @@ fn issue138_1_test() {
     myhome.push("mockito-rusty-pin");
 
     let cache_path = Some(myhome);
+    // Exercise both Unicode records without creating conflicting copies of one URL.
+    let mut bookmarks: serde_json::Value =
+        serde_json::from_str(include_str!("../../tests/issue-138-bookmark-1.json")).unwrap();
+    bookmarks[1]["href"] = json!("https://blog.daum.net/bolee591/?second-fixture");
     debug!("create_mockito_servers: starting.");
     let _m1 = mock("GET", Matcher::Regex(r"^/posts/all.*$".to_string()))
         .with_status(200)
         .with_header("content-type", "application/json")
-        .with_body_from_file("tests/issue-138-bookmark-1.json")
+        .with_body(bookmarks.to_string())
         .create();
     let _m2 = mock("GET", Matcher::Regex(r"^/tags/get.*$".to_string()))
         .with_status(200)
@@ -1078,7 +1157,7 @@ fn serde_update_cache() {
     let mut pinboard = p.unwrap_or_else(|e| panic!("{:?}", e));
 
     // Get all pins directly from Pinboard.in (no caching)
-    let fresh_pins = pinboard.api.all_pins().expect("impossilbe?");
+    let fresh_pins = pinboard.api.all_pins(std::iter::empty()).unwrap().pins;
 
     pinboard.update_cache().expect("Couldn't update the cache");
 

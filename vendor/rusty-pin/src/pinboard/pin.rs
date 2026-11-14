@@ -6,7 +6,7 @@ use chrono::prelude::*;
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq)]
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, Eq)]
 pub struct Pin<'pin> {
     #[serde(rename = "href")]
     pub url: Cow<'pin, str>,

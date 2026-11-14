@@ -37,6 +37,12 @@ Both crates are kept as close to upstream as possible. The changes are:
 - **`rusty-pin`**: two return types in `src/pinboard/mod.rs` gained explicit
   lifetimes, applied by `cargo clippy --fix`, to silence
   `mismatched_lifetime_syntaxes` on current Rust.
+- **`rusty-pin`**: search ranks exact tag matches first. Bookmarks and tags are published
+  together in a single cache file after checking for inconsistent responses. Pinion can
+  look up an exact bookmark or a server update timestamp and set a request timeout.
+- **`alfred-rs`**: downloads require a newer release and verify the workflow archive and
+  its `info.plist` with `zip` and `plist`. JSON writes leave the previous file readable
+  if writing the replacement fails.
 - **`alfred-rs`**: a zero updater interval forces a release check even when there
   is no cached check, so `pcheck` works on its first invocation.
 - Dead CI configuration (`ci/`, `appveyor.yml`, `disable-travis`) was not

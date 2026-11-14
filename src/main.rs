@@ -34,7 +34,6 @@ use std::env;
 use std::io;
 use std::process;
 
-use alfred_rs::Updater;
 use clap::Parser;
 use rusty_pin::Pinboard;
 use thiserror::Error;
@@ -70,8 +69,10 @@ use crate::commands::config;
 pub enum AlfredError {
     #[error("Corrupted config file. Set API token again!")]
     ConfigFileErr,
-    #[error("Missing config file (did you set API token?)")]
+    #[error("Missing config file (did you set API token?). Run `pa` to configure Pinboard.")]
     MissingConfigFile,
+    #[error("Bad Auth. Token! Set it again with `pa`.")]
+    InvalidAuthToken,
     #[error("Cache: {0}")]
     CacheUpdateFailed(String),
     #[error("Post: {0}")]
@@ -115,6 +116,14 @@ fn main() {
     debug!("Parsing input arguments.");
     let opt: Opt = Opt::parse();
 
+    if let SubCommand::VerifyWorkflowRelease { tag, bundle } = &opt.cmd {
+        if let Err(error) = commands::verify_workflow_release(tag, bundle) {
+            eprintln!("Cannot package release {tag:?}: {error}");
+            process::exit(1);
+        }
+        return;
+    }
+
     debug!("Looking for alfred_workflow_* env. vars");
     let env_flags = (
         var_os("alfred_workflow_version").is_some(),
@@ -126,8 +135,11 @@ fn main() {
     );
     if let (true, true, true, true, true, true) = env_flags {
     } else {
-        show_error_alfred("Your workflow is not set up properly. Check alfred_workflow_* env var.");
-        process::exit(1);
+        show_startup_error(
+            &opt.cmd,
+            "Your workflow is not set up properly. Check alfred_workflow_* env var.",
+        );
+        return;
     }
 
     debug!(
@@ -144,48 +156,131 @@ fn main() {
     debug!("alfred_version: {:?}", var_os("alfred_version"));
 
     debug!("Input cli command is {:?}", &opt.cmd);
+    if matches!(opt.cmd, SubCommand::CheckWorkflowUpdate) {
+        if let Err(error) = commands::check_workflow_update() {
+            warn!("Workflow update check: {error}");
+        }
+        return;
+    }
+    if let SubCommand::InstallWorkflow { bundle } = &opt.cmd {
+        commands::install_workflow(bundle);
+        return;
+    }
+    if let SubCommand::SuggestPostTags { url, account, job } = &opt.cmd {
+        if let Err(error) = commands::suggest_post_tags(url, account, job) {
+            warn!(
+                "Fetching popular tags: {}",
+                redact_token(&error.to_string())
+            );
+        }
+        return;
+    }
+    if let SubCommand::RetitleFilter { title } = &opt.cmd {
+        commands::retitle_filter(title);
+        return;
+    }
+    if let SubCommand::RememberBookmark { account, url } = &opt.cmd {
+        if let Err(error) = commands::remember_bookmark(account, url) {
+            warn!("Couldn't remember recently opened bookmark: {error}");
+        }
+        return;
+    }
+
     // Separate Config subcommand from rest of cli commands since during config we may run into
     // errors that cannot be fixed.
     if let SubCommand::Config { .. } = opt.cmd {
         config::run(opt.cmd);
     // Otherwise, if user is not configuring, we will abort upon any errors.
     } else {
+        let query_started_at = chrono::Utc::now();
+        let is_script_filter = var_os("pinion_alfred_filter").is_some()
+            && matches!(
+                opt.cmd,
+                SubCommand::List { .. }
+                    | SubCommand::Search {
+                        showonlyurl: false,
+                        ..
+                    }
+            );
         let (config, pinboard) = if matches!(opt.cmd, SubCommand::SelfUpdate { .. }) {
             // Software updates only need Alfred's environment and the updater cache.
             (Config::new(), None)
         } else {
-            let (config, pinboard) = setup().unwrap_or_else(|err| {
-                show_error_alfred(err.to_string());
-                process::exit(1);
-            });
-            (config, Some(pinboard))
+            match setup() {
+                Ok((config, pinboard)) => (config, Some(pinboard)),
+                Err(error) if is_script_filter => {
+                    // Software update checks remain available before Pinboard
+                    // has been configured or while its cache is unavailable.
+                    let runner = Runner {
+                        config: Some(Config::new()),
+                        pinboard: None,
+                        rerun_seconds: None,
+                        sync_authentication_failed: false,
+                        cache_wait_item: None,
+                    };
+                    let status = unavailable_cache_item(Some(error.to_string()));
+                    runner.write_output_items([status], None::<[(&str, &str); 0]>);
+                    return;
+                }
+                Err(error) => {
+                    show_startup_error(&opt.cmd, &error.to_string());
+                    return;
+                }
+            }
         };
-
-        let mut updater = Updater::gh("vmlrodrigues/pinion").unwrap();
-
-        if matches!(opt.cmd, SubCommand::SelfUpdate { check: true, .. }) {
-            updater.set_interval(0);
-        }
-        updater.init().expect("cannot start updater!");
-
-        debug!("Workflow Config: {:?}", &config);
         let mut runner = Runner {
             config: Some(config),
             pinboard,
-            updater: Some(updater),
+            rerun_seconds: None,
+            sync_authentication_failed: false,
+            cache_wait_item: None,
         };
+
+        if matches!(opt.cmd, SubCommand::SyncBookmarks) {
+            if let Err(error) = runner.sync_cache() {
+                warn!("Bookmark sync: {}", redact_token(&error.to_string()));
+            }
+            return;
+        }
+
+        debug!("Workflow Config: {:?}", runner.config);
+        if is_script_filter && runner.config.as_ref().unwrap().can_use_json() {
+            let status = match runner.ensure_cache_for_filter() {
+                Ok(None) => None,
+                Ok(Some(wait)) => {
+                    runner.rerun_seconds = wait.seconds;
+                    Some(unavailable_cache_item(wait.error))
+                }
+                Err(error) => Some(unavailable_cache_item(Some(error.to_string()))),
+            };
+            if let Some(status) = status {
+                // Posting can use suggestions or typed input, and both tag
+                // rename filters can use an explicitly entered name.
+                let accepts_input = matches!(opt.cmd, SubCommand::List { tags: true, .. })
+                    && (var_os("pinion_post_filter").is_some() || opt.query_as_item);
+                if !accepts_input {
+                    runner.write_output_items([status], None::<[(&str, &str); 0]>);
+                    return;
+                }
+                runner.cache_wait_item = Some(status);
+            }
+        } else if matches!(opt.cmd, SubCommand::List { .. } | SubCommand::Search { .. }) {
+            if let Err(error) = runner.ensure_cache() {
+                show_error_alfred(error.to_string());
+                process::exit(1);
+            }
+        }
         match opt.cmd {
             SubCommand::Update => {
                 // Force the download. Asking for `pupdate` explicitly is the only way a
                 // user can rebuild a corrupt or truncated cache — deferring to the
                 // server's timestamp here would answer "already up-to-date" and leave
-                // them stuck. The automatic post-write refreshes still pass `false`.
-                runner.update_cache(true);
+                // them stuck.
+                runner.update_cache();
             }
-            SubCommand::List { .. } => {
-                runner.list(opt);
-            }
+            SubCommand::List { .. } => runner.list(opt, query_started_at),
             SubCommand::Search { .. } => {
+                runner.schedule_sync(query_started_at);
                 runner.search(opt.cmd);
             }
             SubCommand::Post { .. } => {
@@ -203,16 +298,39 @@ fn main() {
             SubCommand::Retitle { .. } => {
                 runner.retitle(&opt.cmd);
             }
+            SubCommand::RetitleSave { selection } => {
+                runner.retitle_selection(&selection);
+            }
             // We have already checked for this variant
-            SubCommand::Config { .. } => unimplemented!(),
+            SubCommand::Config { .. }
+            | SubCommand::SyncBookmarks
+            | SubCommand::SuggestPostTags { .. }
+            | SubCommand::RetitleFilter { .. }
+            | SubCommand::RememberBookmark { .. }
+            | SubCommand::VerifyWorkflowRelease { .. }
+            | SubCommand::InstallWorkflow { .. }
+            | SubCommand::CheckWorkflowUpdate => unreachable!(),
         }
     }
+}
+
+fn unavailable_cache_item(error: Option<String>) -> alfred::Item<'static> {
+    let item = match error {
+        Some(error) => alfred::ItemBuilder::new("Error")
+            .subtitle(redact_token(&error))
+            .icon_path("erroricon.icns"),
+        None => alfred::ItemBuilder::new("Downloading Pinboard bookmarks…"),
+    };
+    item.valid(false).into_item()
 }
 
 fn setup<'a, 'p>() -> Result<(Config, Pinboard<'a, 'p>), Box<dyn std::error::Error>> {
     debug!("Starting in setup");
     let config = Config::setup()?;
-    let mut pinboard = Pinboard::new(config.auth_token.clone(), alfred::env::workflow_cache())?;
+    let cache_dir = config.bookmark_cache_dir()?;
+    let mut pinboard = Pinboard::open(config.auth_token.clone(), Some(&cache_dir))
+        .map_err(|error| AlfredError::CacheUpdateFailed(error.to_string()))?;
+    pinboard.enable_request_pacing(cache_dir);
     pinboard.enable_fuzzy_search(config.fuzzy_search);
     pinboard.enable_tag_only_search(config.tag_only_search);
     pinboard.enable_private_new_pin(config.private_new_pin);
@@ -223,6 +341,18 @@ fn setup<'a, 'p>() -> Result<(Config, Pinboard<'a, 'p>), Box<dyn std::error::Err
 
 fn write_to_alfred<'a, 'b, I, J>(items: I, supports_json: bool, vars: Option<J>)
 where
+    I: IntoIterator<Item = alfred::Item<'a>>,
+    J: IntoIterator<Item = (&'b str, &'b str)>,
+{
+    write_alfred_results(items, supports_json, vars, None);
+}
+
+fn write_alfred_results<'a, 'b, I, J>(
+    items: I,
+    supports_json: bool,
+    vars: Option<J>,
+    rerun_seconds: Option<u8>,
+) where
     I: IntoIterator<Item = alfred::Item<'a>>,
     J: IntoIterator<Item = (&'b str, &'b str)>,
 {
@@ -240,10 +370,29 @@ where
     debug!("variables: {:?}", variables);
     // Depending on alfred version use either json or xml output.
     if supports_json {
-        alfred::json::Builder::with_items(output_items.as_slice())
+        let mut output = alfred::json::Builder::with_items(output_items.as_slice())
             .variables(variables)
-            .write(io::stdout())
-            .expect("Couldn't write items to Alfred");
+            .into_json();
+        if let Some(items) = output["items"].as_array_mut() {
+            for item in items
+                .iter_mut()
+                .filter(|item| item["variables"]["workflow_update_ready"] == "1")
+            {
+                // The bookmark filters bind these keys to actions of their own.
+                // Serialize combinations here because alfred::Modifier only accepts single keys.
+                item["mods"] = serde_json::json!({
+                    "alt": { "valid": false },
+                    "ctrl": { "valid": false },
+                    "cmd": { "valid": false },
+                    "alt+ctrl": { "valid": false },
+                    "cmd+alt": { "valid": false },
+                });
+            }
+        }
+        if let Some(seconds) = rerun_seconds {
+            output["rerun"] = serde_json::json!(seconds);
+        }
+        serde_json::to_writer(io::stdout(), &output).expect("Couldn't write items to Alfred");
     } else {
         alfred::xml::write_items(io::stdout(), &output_items)
             .expect("Couldn't write items to Alfred");
@@ -282,6 +431,70 @@ pub fn redact_token(s: &str) -> String {
     }
     out.push_str(&s[at..]);
     out
+}
+
+fn show_startup_error(cmd: &SubCommand, message: &str) {
+    if matches!(
+        cmd,
+        SubCommand::Retitle {
+            editor_context: true,
+            ..
+        }
+    ) {
+        commands::retitle_editor_error(message);
+        return;
+    }
+    if matches!(cmd, SubCommand::RetitleFilter { .. }) {
+        commands::retitle_filter_error(message);
+        return;
+    }
+    if matches!(
+        cmd,
+        SubCommand::Rename {
+            action_json: true,
+            ..
+        } | SubCommand::Rename {
+            editor_tag: Some(_),
+            ..
+        }
+    ) {
+        commands::rename_action_error(message);
+        return;
+    }
+    if matches!(
+        cmd,
+        SubCommand::Delete {
+            action_text: true,
+            ..
+        } | SubCommand::Post {
+            action_text: true,
+            ..
+        } | SubCommand::Retitle {
+            action_text: true,
+            ..
+        } | SubCommand::RetitleSave { .. }
+    ) {
+        // Alfred forwards this text to the action's error output.
+        print!("Error: {}", redact_token(message));
+        return;
+    }
+    if matches!(
+        cmd,
+        SubCommand::Delete {
+            passive_preview: true,
+            ..
+        }
+    ) {
+        let item = unavailable_cache_item(Some(message.to_owned()));
+        alfred::json::write_items(io::stdout(), &[item]).expect("Can't write to stdout");
+        return;
+    }
+    if matches!(cmd, SubCommand::Update) {
+        // The cache rebuild is an Alfred action that expects a plain text result.
+        println!("Error: {}", redact_token(message));
+        process::exit(1);
+    }
+    show_error_alfred(message);
 }
 
 fn show_error_alfred<'a, T: Into<Cow<'a, str>>>(s: T) {

@@ -13,8 +13,12 @@ on appIsRunning(appName)
 end appIsRunning
 
 
-on run
+on run argv
 	set theApplication to (name of (info for (path to frontmost application)))
+	set passiveLookup to argv is {"passive"}
+	if (count of argv) is 2 then
+		if first item of argv is "interactive" and theApplication is not second item of argv then error "The active browser changed."
+	end if
 	set theText to ""
 	set theURL to ""
 	
@@ -157,6 +161,7 @@ on run
 		set theText to item 2 of theResult
 		
 	else if theApplication is "qutebrowser.app" and appIsRunning("qutebrowser") then
+		if passiveLookup then return {"pinion-browser-fallback:" & theApplication}
 		set theResult to run script "tell application id \"org.qt-project.Qt.QtWebEngineCore\"
           activate
         end tell
@@ -164,6 +169,7 @@ on run
           set myApp to name of first application process whose frontmost is true
         end tell
         if myApp is \"qutebrowser\" then
+          set the clipboard to \"\"
           tell application \"System Events\"
             key code 53 -- ESC
             delay 0.5
@@ -176,6 +182,7 @@ on run
           delay 0.5
           set theURL to (get the clipboard as Unicode text)
 
+          set the clipboard to \"\"
           tell application \"System Events\" -- yank title
             keystroke \"y\"
             delay 0.4
@@ -194,6 +201,7 @@ on run
 		if externalResult contains "fd850fc2e63511e79f720023dfdf24ec" then
 			return externalResult
 		end if
+		if passiveLookup then return {"pinion-browser-fallback:" & theApplication}
 		set theResult to run script "tell application id \"org.mozilla.firefox\"
           activate
           set w to item 1 of window 1
@@ -203,6 +211,7 @@ on run
         tell application \"System Events\"
           set myApp to name of first application process whose frontmost is true
           if myApp is \"Firefox\" then
+            tell current application to set the clipboard to \"\"
             tell application \"System Events\"
               key code 97
               delay 0.5
@@ -224,6 +233,7 @@ on run
 		-- below failed and the old code returned whatever was already on the
 		-- clipboard as the URL, silently bookmarking the wrong page.
 	else if {"Firefox Developer Edition.app", "FirefoxDeveloperEdition.app"} contains theApplication and (appIsRunning("Firefox Developer Edition") or appIsRunning("FirefoxDeveloperEdition")) then
+		if passiveLookup then return {"pinion-browser-fallback:" & theApplication}
 		set theResult to run script "tell application id \"org.mozilla.firefoxdeveloperedition\"
           activate
           set w to item 1 of window 1
@@ -233,6 +243,7 @@ on run
         tell application \"System Events\"
           set myApp to name of first application process whose frontmost is true
           if myApp is \"Firefox Developer Edition\" or myApp is \"FirefoxDeveloperEdition\" then
+            tell current application to set the clipboard to \"\"
             tell application \"System Events\"
               keystroke \"l\" using command down
               delay 0.5

@@ -1,3 +1,5 @@
+name: tests
+
 on:
   push:
     branches:
@@ -5,28 +7,25 @@ on:
   pull_request:
     branches:
       - master
+  workflow_call:
   workflow_dispatch:
 
-name: tests
-
-env:
-  RELEASE_COMMIT: ${{ github.ref_type == 'tag' }}
-  PINBOARD_TOKEN: ${{ secrets.PINBOARD_TOKEN }}
+permissions:
+  contents: read
 
 jobs:
-  build_universal:
-    name: Run non-fat tests on ubuntu
+  regressions:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      # Toolchain comes from rust-toolchain.toml — see that file for why.
+      # Use the toolchain pinned in rust-toolchain.toml.
       - name: Install pinned toolchain
         run: rustup show
 
-      - name: Build x86_64 (Debug)
-        if: ${{ env.RELEASE_COMMIT != 'true' }}
-        run: cargo build
+      - name: Test Pinion and its vendored libraries
+        # The vendored tests share environment variables and a mock server port.
+        run: cargo test --locked --workspace --lib --bins -- --test-threads=1
 
-      - name: Run tests
-        run: .github/workflows/run_tests.sh ${{ github.workspace }}/target/debug/pinion
+      - name: Run Alfred workflow regression tests
+        run: python3 tests/workflow_regression.py

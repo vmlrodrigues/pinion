@@ -16,9 +16,11 @@ permissions:
 
 env:
   RELEASE_COMMIT: ${{ github.ref_type == 'tag' }}
-  PINBOARD_TOKEN: ${{ secrets.PINBOARD_TOKEN }}
 
 jobs:
+  regressions:
+    uses: ./.github/workflows/test.yml
+
   check_if_tagged:
     name: Check if tagged
     runs-on: macos-latest
@@ -38,7 +40,7 @@ jobs:
   build_universal:
     name: Build Universal Binary
     runs-on: macos-latest
-    needs: check_if_tagged
+    needs: [check_if_tagged, regressions]
     if: ${{ needs.check_if_tagged.outputs.istagged == 0 || github.ref_type == 'tag' }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -56,19 +58,19 @@ jobs:
 
       - name: Build aarch64-apple-darwin (Debug)
         if: ${{ env.RELEASE_COMMIT != 'true' }}
-        run: cargo build --target aarch64-apple-darwin
+        run: cargo build --locked --target aarch64-apple-darwin
 
       - name: Build aarch64-apple-darwin (Release)
         if: ${{ env.RELEASE_COMMIT == 'true' }}
-        run: cargo build --release --target aarch64-apple-darwin
+        run: cargo build --locked --release --target aarch64-apple-darwin
 
       - name: Build x86_64-apple-darwin (Debug)
         if: ${{ env.RELEASE_COMMIT != 'true' }}
-        run: cargo build --target x86_64-apple-darwin
+        run: cargo build --locked --target x86_64-apple-darwin
 
       - name: Build x86_64-apple-darwin (Release)
         if: ${{ env.RELEASE_COMMIT == 'true' }}
-        run: cargo build --release --target x86_64-apple-darwin
+        run: cargo build --locked --release --target x86_64-apple-darwin
 
       # Only for real releases, and only when the secrets exist — forks and pull
       # requests fall through and produce an unsigned build rather than failing.
@@ -121,7 +123,7 @@ jobs:
             echo "NOTARY_ISSUER=$NOTARY_ISSUER"
           } >> "$GITHUB_ENV"
 
-      - name: Grow fat, test, and make alfredworkflow
+      - name: Combine binaries and package workflow
         run: .github/workflows/script.sh
 
       # Both run even on failure. The runner is destroyed afterwards regardless,

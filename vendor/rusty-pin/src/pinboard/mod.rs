@@ -16,6 +16,7 @@ use env_logger;
 use lazy_static::lazy_static;
 
 mod api;
+pub use api::ApiError;
 mod cached_data;
 mod config;
 
@@ -25,6 +26,7 @@ mod mockito_helper;
 mod tests;
 
 pub mod pin;
+mod request_pacing;
 pub mod tag;
 
 use self::cached_data::{CachedData, CachedPin};
@@ -45,6 +47,15 @@ pub struct Pinboard<'api, 'pin> {
     cached_data: CachedData<'pin>,
 }
 
+/// Whether the published cache still needs a retry for an incomplete export.
+#[derive(Debug, PartialEq, Eq)]
+pub enum CacheRefresh {
+    /// The export provided enough evidence to accept the snapshot as complete.
+    Complete,
+    /// Valid bookmarks were cached, but the export may be missing some records.
+    Partial,
+}
+
 /// # Errors
 ///
 /// Returns error on network failure or file failure
@@ -60,26 +71,42 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
         S: Into<Cow<'api, str>>,
         P: AsRef<Path>,
     {
-        let _ = env_logger::try_init();
-        let api = api::Api::new(auth_token);
-        let cfg = Config::new();
-
-        debug!("pinb::new: calling CachedData::new");
-        let mut cached_data = CachedData::new(cached_dir)?;
-        if cached_data.cache_ok() {
-            debug!("pinb::new: cache not missing");
-        } else {
-            debug!("pinb::new: cache file missing, calling update");
-            cached_data.update_cache(&api)?;
-            debug!("pinb::new:   update done.");
+        let mut pinboard = Self::open(auth_token, cached_dir)?;
+        if !pinboard.cache_is_available() {
+            pinboard.update_cache()?;
         }
-
-        let pinboard = Pinboard {
-            api,
-            cfg,
-            cached_data,
-        };
         Ok(pinboard)
+    }
+
+    /// Open the local cache without contacting Pinboard.
+    ///
+    /// # Errors
+    /// Returns an error if the cache directory cannot be created.
+    pub fn open<S, P>(
+        auth_token: S,
+        cached_dir: Option<P>,
+    ) -> Result<Self, Box<dyn std::error::Error>>
+    where
+        S: Into<Cow<'api, str>>,
+        P: AsRef<Path>,
+    {
+        Ok(Self {
+            api: api::Api::new(auth_token),
+            cfg: Config::new(),
+            cached_data: CachedData::new(cached_dir)?,
+        })
+    }
+
+    pub fn cache_is_available(&self) -> bool {
+        self.cached_data.cache_ok()
+    }
+
+    /// Reload bookmarks and tags published by another process.
+    ///
+    /// # Errors
+    /// Returns an error if no valid copy can be read.
+    pub fn reload_cache(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.cached_data.load_cache_data_from_file()
     }
 
     /// # Errors
@@ -123,6 +150,41 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
         self.api.add_url(p)
     }
 
+    /// Look up the exact bookmark on Pinboard, without using the local cache.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or the response is invalid.
+    pub fn find_remote_url(
+        &self,
+        url: &str,
+    ) -> Result<Option<Pin<'pin>>, Box<dyn std::error::Error>> {
+        self.api
+            .find_url(url, request_pacing::RequestKind::Ordinary)
+    }
+
+    /// Read a bookmark for display without holding the shared request lock during network I/O.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or the response is invalid.
+    pub fn preview_remote_url(
+        &self,
+        url: &str,
+        timeout: std::time::Duration,
+    ) -> Result<Option<Pin<'pin>>, Box<dyn std::error::Error>> {
+        let mut api = self.api.clone();
+        api.set_request_timeout(Some(timeout));
+        api.find_url(url, request_pacing::RequestKind::Background)
+    }
+
+    /// Write an updated bookmark back to Pinboard, preserving its saved timestamp.
+    ///
+    /// # Errors
+    /// Returns an error if the URL is invalid or the request fails.
+    pub fn replace_pin(&self, pin: Pin) -> Result<(), Box<dyn std::error::Error>> {
+        Url::parse(&pin.url)?;
+        self.api.replace_url(pin)
+    }
+
     /// # Errors
     ///
     /// Returns an error if network/server error occurs.
@@ -139,7 +201,27 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
         last_update: DateTime<Utc>,
     ) -> Result<bool, Box<dyn std::error::Error>> {
         debug!("is_cache_outdated: starting.");
-        self.api.recent_update().map(|res| last_update < res)
+        self.remote_update_time().map(|res| last_update < res)
+    }
+
+    /// Return the most recent bookmark update time reported by Pinboard.
+    ///
+    /// # Errors
+    /// Returns an error if the request fails or the response is invalid.
+    pub fn remote_update_time(&self) -> Result<DateTime<Utc>, Box<dyn std::error::Error>> {
+        self.api.recent_update()
+    }
+
+    /// Override the request timeout for this client, or restore the default with `None`.
+    pub fn set_request_timeout(&mut self, timeout: Option<std::time::Duration>) {
+        self.api.set_request_timeout(timeout);
+    }
+
+    /// Coordinate ordinary API calls with other clients using the same account directory.
+    ///
+    /// The caller manages the separate cooldown for full bookmark downloads.
+    pub fn enable_request_pacing<P: Into<PathBuf>>(&mut self, account_cache_dir: P) {
+        self.api.set_request_pacing(account_cache_dir.into());
     }
 
     /// Delete a tag
@@ -169,6 +251,15 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
     ///
     /// Returns error if cache cannot be updated due to file errors or serde erros
     pub fn update_cache(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+        self.refresh_cache().map(|_| ())
+    }
+
+    /// Update the local bookmark and tag cache and report its completeness.
+    ///
+    /// # Errors
+    /// Returns an error if the download or save fails, or publishing the snapshot
+    /// would risk deleting a previously cached bookmark due to malformed data.
+    pub fn refresh_cache(&mut self) -> Result<CacheRefresh, Box<dyn std::error::Error>> {
         debug!("update_cache: starting.");
         self.cached_data.update_cache(&self.api)
     }
@@ -317,7 +408,19 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
     // https://github.com/sharkdp/hexyl
     // should be considered identical (?!)
 
-    /// Finds all pins whose url is an exact match of the `q`
+    /// Checks whether the cache contains this exact URL, including path and query case.
+    #[must_use]
+    pub fn has_cached_url(&self, url: &str) -> bool {
+        self.cached_data.cache_ok()
+            && self
+                .cached_data
+                .pins
+                .iter()
+                .flatten()
+                .any(|cached| cached.pin.url == url)
+    }
+
+    /// Finds all pins whose URLs match `q` ignoring case.
     ///
     /// `find_url("http://google.com/public")` will match
     /// <http://google.com/public>
@@ -405,14 +508,34 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
     /// Searches the selected `fields` within bookmarks to filter them.
     /// It will return bookmarks that have ALL of search queries provided in 'q' somewhere in the
     /// specified 'fields' of the bookmark.
+    /// When searching tags, bookmarks matching more query terms as whole tags come first.
+    /// Bookmarks within each group keep their newest-first order.
     /// This function honors [`pinboard::config::Config`] settings for fuzzy search only.
     /// # Errors
     /// If cached data is not readable an error will be returned.
-    #[allow(clippy::too_many_lines)]
     pub fn search<'b, I, S>(
         &'pin self,
         q: &'b I,
         fields: &[SearchType],
+    ) -> Result<Option<Vec<&'pin Pin<'pin>>>, Box<dyn std::error::Error>>
+    where
+        &'b I: IntoIterator<Item = S>,
+        S: AsRef<str>,
+    {
+        self.search_ranked(q, fields, |_| usize::MAX)
+    }
+
+    /// Search bookmarks, using a caller's rank within each group of matches.
+    /// Lower values come first. Equal ranks keep the cache's newest-first order.
+    ///
+    /// # Errors
+    /// Returns an error if cached data cannot be read.
+    #[allow(clippy::too_many_lines)]
+    pub fn search_ranked<'b, I, S>(
+        &'pin self,
+        q: &'b I,
+        fields: &[SearchType],
+        rank: impl Fn(&str) -> usize,
     ) -> Result<Option<Vec<&'pin Pin<'pin>>>, Box<dyn std::error::Error>>
     where
         &'b I: IntoIterator<Item = S>,
@@ -437,19 +560,21 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
 
         // Apply Unicode normalization to user-input search query using 'K'ompatibility and
         // 'D'ecomposition options (nfkd). Alfred seems to use the same.
-        let normalized_queires = q
+        let mut normalized_queries = q
             .into_iter()
             .map(|s| s.as_ref().chars().nfkd().collect::<String>().to_lowercase())
             .collect::<Vec<String>>();
+        normalized_queries.sort_unstable();
+        normalized_queries.dedup();
         #[allow(clippy::if_not_else)]
-        let results = if !self.cfg.fuzzy_search {
+        let mut results = if !self.cfg.fuzzy_search {
             self.cached_data
                 .pins
                 .as_ref()
                 .map(|p: &Vec<CachedPin<'pin>>| {
                     p.iter()
                         .filter(|cached_pin: &&CachedPin<'pin>| {
-                            normalized_queires.iter().all(|query| {
+                            normalized_queries.iter().all(|query| {
                                 search_fields.iter().any(|search_type| match *search_type {
                                     SearchType::TitleOnly => {
                                         cached_pin.title_lowered.contains(query)
@@ -474,8 +599,7 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
                                 })
                             })
                         })
-                        .map(|p| &p.pin)
-                        .collect::<Vec<&'pin Pin>>()
+                        .collect::<Vec<_>>()
                 })
                 .unwrap_or_default()
         } else {
@@ -485,7 +609,7 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
                 .map(|p| {
                     p.iter()
                         .filter(|cached_pin: &&CachedPin| {
-                            normalized_queires.iter().all(|qi| {
+                            normalized_queries.iter().all(|qi| {
                                 search_fields.iter().any(|search_type| match *search_type {
                                     SearchType::TitleOnly => MATCHER
                                         .fuzzy_match(&cached_pin.title_lowered, qi.as_ref())
@@ -517,15 +641,29 @@ impl<'api, 'pin> Pinboard<'api, 'pin> {
                                 })
                             })
                         })
-                        .map(|p| &p.pin)
-                        .collect::<Vec<&Pin>>()
+                        .collect::<Vec<_>>()
                 })
                 .unwrap_or_default()
         };
 
+        let search_tags = search_fields
+            .iter()
+            .any(|field| matches!(field, SearchType::TagOnly | SearchType::TagTitleOnly));
+        results.sort_by_cached_key(|pin| {
+            let exact_tags = if search_tags {
+                normalized_queries
+                    .iter()
+                    .filter(|query| pin.tag_list.contains(query))
+                    .count()
+            } else {
+                0
+            };
+            (std::cmp::Reverse(exact_tags), rank(pin.pin.url.as_ref()))
+        });
+
         match results.len() {
             0 => Ok(None),
-            _ => Ok(Some(results)),
+            _ => Ok(Some(results.into_iter().map(|pin| &pin.pin).collect())),
         }
     }
 }

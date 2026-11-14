@@ -1,11 +1,16 @@
 [package]
 name = "pinion"
-version = "0.27.1"
+version = "0.28.0"
 authors = [ "Hamid Ghadyani <hamid@hamid.cc>", "Victor Rodrigues",]
 edition = "2021"
 description = "Alfred workflow for Pinboard.in bookmarks, written in Rust."
 license = "MIT"
 repository = "https://github.com/vmlrodrigues/pinion"
+
+[workspace]
+members = ["vendor/alfred-rs", "vendor/rusty-pin"]
+default-members = ["."]
+resolver = "2"
 
 [dependencies]
 alfred = "4.0.1"

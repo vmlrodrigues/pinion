@@ -385,16 +385,6 @@
 			</dict>
 			<dict>
 				<key>destinationuid</key>
-				<string>78C19F72-991F-47BC-85D0-E69E021AC18A</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
 				<string>221EA45C-D3F1-4FD8-9143-CD10110D5BFC</string>
 				<key>modifiers</key>
 				<integer>0</integer>
@@ -484,29 +474,6 @@
 				<false/>
 			</dict>
 		</array>
-		<key>59152538-B4C0-4377-AEEA-034B5B257033</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>0F03B46B-AD75-491E-8B5B-36ADF3E084F4</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>BC2AD49B-4564-4816-B814-83431644EC9D</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
 		<key>59CC5D01-8A21-4819-BCBD-A02BF648DCD1</key>
 		<array>
 			<dict>
@@ -547,7 +514,7 @@
 			</dict>
 			<dict>
 				<key>destinationuid</key>
-				<string>51B3C295-B9CD-44D4-B1D3-19038C54735B</string>
+				<string>D628D994-1BDE-4B90-89A6-19287F0AB363</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -574,19 +541,6 @@
 			<dict>
 				<key>destinationuid</key>
 				<string>2338607E-BB4F-4C20-B121-B2C3A10C1C6E</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
-		<key>68426E77-6C32-41BA-A11F-8B90F20AABEE</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>EA97375D-329E-4A06-8BBF-FBF7329AA9CC</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -625,19 +579,6 @@
 			<dict>
 				<key>destinationuid</key>
 				<string>28EB0348-E6C5-4205-9AD5-B50DDFFF4DD0</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
-		<key>71EE10F6-37BC-4869-B8A8-0602D9A76863</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>7BF8F66E-ECC8-4BCD-86CE-5E19FD509604</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -726,29 +667,6 @@
 			<dict>
 				<key>destinationuid</key>
 				<string>E9FC9061-CE38-46EA-8919-604B8DC67453</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
-		<key>7BF8F66E-ECC8-4BCD-86CE-5E19FD509604</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>0F03B46B-AD75-491E-8B5B-36ADF3E084F4</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>68426E77-6C32-41BA-A11F-8B90F20AABEE</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -877,31 +795,19 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
-				<string>71EE10F6-37BC-4869-B8A8-0602D9A76863</string>
+				<string>41032086-9AA2-40AF-A887-9148D35771D8</string>
 				<key>modifiers</key>
 				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
+				<key>sourceoutputuid</key>
+				<string>E5C049F6-9E51-4532-9D0C-2B0865B74012</string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
 			<dict>
 				<key>destinationuid</key>
-				<string>D52A87C2-E602-4F4F-A20E-DD9202A461E9</string>
+				<string>0F03B46B-AD75-491E-8B5B-36ADF3E084F4</string>
 				<key>modifiers</key>
 				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-			<dict>
-				<key>destinationuid</key>
-				<string>EF1102C5-4180-496A-A4AF-1FDB7C59D7EE</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
 				<key>vitoclose</key>
 				<false/>
 			</dict>
@@ -992,7 +898,32 @@
 		<array>
 			<dict>
 				<key>destinationuid</key>
+				<string>C7A82135-E522-44F7-9DEF-A0D2634712A1</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>C7A82135-E522-44F7-9DEF-A0D2634712A1</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
 				<string>9CB57748-F1F2-4665-A7E0-55B546C50C77</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>sourceoutputuid</key>
+				<string>297CB338-4DF1-4BF3-9F2C-7E4319C53ECE</string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+			<dict>
+				<key>destinationuid</key>
+				<string>282CD8F9-1BEE-4B7D-A72C-94D7CBA13073</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -1028,7 +959,18 @@
 			</dict>
 		</array>
 		<key>B17E1000-0002-4000-8000-000000000002</key>
-		<array/>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>B17E1000-0003-4000-8000-000000000003</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
 		<key>B17E1000-0003-4000-8000-000000000003</key>
 		<array>
 			<dict>
@@ -1093,19 +1035,6 @@
 				<false/>
 			</dict>
 		</array>
-		<key>BC2AD49B-4564-4816-B814-83431644EC9D</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>2338607E-BB4F-4C20-B121-B2C3A10C1C6E</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
 		<key>C014F87B-6FD0-4F58-96A2-92B09A4086FE</key>
 		<array>
 			<dict>
@@ -1145,19 +1074,6 @@
 				<false/>
 			</dict>
 		</array>
-		<key>D52A87C2-E602-4F4F-A20E-DD9202A461E9</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>59152538-B4C0-4377-AEEA-034B5B257033</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
 		<key>D5939049-C73A-4872-9625-87A9F9BE886C</key>
 		<array>
 			<dict>
@@ -1171,11 +1087,22 @@
 				<false/>
 			</dict>
 		</array>
-		<key>D628D994-1BDE-4B90-89A6-19287F0AB363</key>
+		<key>C34B57E5-B788-4643-BF26-7C164DDF100D</key>
 		<array>
 			<dict>
 				<key>destinationuid</key>
 				<string>C2C3C705-A4E7-44AB-BB2B-46F35B1A8E0E</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>D628D994-1BDE-4B90-89A6-19287F0AB363</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>C34B57E5-B788-4643-BF26-7C164DDF100D</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -1210,6 +1137,19 @@
 			</dict>
 		</array>
 		<key>E269A06C-1525-47CC-9700-2E6CD335FA63</key>
+		<array>
+			<dict>
+				<key>destinationuid</key>
+				<string>B17E1000-000B-4000-8000-00000000000B</string>
+				<key>modifiers</key>
+				<integer>0</integer>
+				<key>modifiersubtext</key>
+				<string></string>
+				<key>vitoclose</key>
+				<false/>
+			</dict>
+		</array>
+		<key>B17E1000-000B-4000-8000-00000000000B</key>
 		<array>
 			<dict>
 				<key>destinationuid</key>
@@ -1273,19 +1213,6 @@
 				<false/>
 			</dict>
 		</array>
-		<key>EA97375D-329E-4A06-8BBF-FBF7329AA9CC</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>2CEC8590-363C-4F9E-810F-E15D3C433F90</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
 		<key>EC26DEC8-AB37-411E-BFB2-73C7CB76C41C</key>
 		<array>
 			<dict>
@@ -1303,19 +1230,6 @@
 			<dict>
 				<key>destinationuid</key>
 				<string>282CD8F9-1BEE-4B7D-A72C-94D7CBA13073</string>
-				<key>modifiers</key>
-				<integer>0</integer>
-				<key>modifiersubtext</key>
-				<string></string>
-				<key>vitoclose</key>
-				<false/>
-			</dict>
-		</array>
-		<key>EF1102C5-4180-496A-A4AF-1FDB7C59D7EE</key>
-		<array>
-			<dict>
-				<key>destinationuid</key>
-				<string>41032086-9AA2-40AF-A887-9148D35771D8</string>
 				<key>modifiers</key>
 				<integer>0</integer>
 				<key>modifiersubtext</key>
@@ -1382,11 +1296,7 @@
 				<key>escaping</key>
 				<integer>126</integer>
 				<key>script</key>
-				<string># $tags and $description env. variables are passed in as input from previous script filter.
-
-ret=$(./pinion post --tags "$tags" --description "$description")
-
-echo "$ret"</string>
+				<string>./pinion post --action-text --tags="$tags" --description="$description" --expected-url="$pinion_post_url" --expected-account="$pinion_post_account" --fallback-browser="$pinion_post_browser"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1454,8 +1364,9 @@ echo "$ret"</string>
 # downstream is set to "only show if query populated", so echoing nothing
 # suppresses it entirely. Failures travel a different path and always notify.
 [ "$notify_on_post" = "1" ] || exit 0
-title=$(echo "$1" | sed -n '1p' | cut -d ' ' -f 3-)
-echo "Posted: $title"</string>
+case "$1" in
+    "Successfully posted: "*) printf 'Posted: %s' "${1#Successfully posted: }" ;;
+esac</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1473,44 +1384,6 @@ echo "Posted: $title"</string>
 		<dict>
 			<key>config</key>
 			<dict>
-				<key>inputstring</key>
-				<string>{query}</string>
-				<key>matchcasesensitive</key>
-				<false/>
-				<key>matchmode</key>
-				<integer>2</integer>
-				<key>matchstring</key>
-				<string>^((?!Error: )[\s\S])*$</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.filter</string>
-			<key>uid</key>
-			<string>7BF8F66E-ECC8-4BCD-86CE-5E19FD509604</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>inputstring</key>
-				<string>{query}</string>
-				<key>matchcasesensitive</key>
-				<false/>
-				<key>matchmode</key>
-				<integer>2</integer>
-				<key>matchstring</key>
-				<string>Successfully posted: .*</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.filter</string>
-			<key>uid</key>
-			<string>71EE10F6-37BC-4869-B8A8-0602D9A76863</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
 				<key>concurrently</key>
 				<false/>
 				<key>escaping</key>
@@ -1520,12 +1393,7 @@ echo "Posted: $title"</string>
 
 [ "$toread" = "false" ] &amp;&amp; toread=true || toread=false
 
-ret=$(./pinion post --toread "$toread" --tags "$tags" --description "$description")
-if [ $? -ne 0 ]; then
-    echo -n "$ret"
-else
-    echo -n "$ret"
-fi</string>
+./pinion post --action-text --toread "$toread" --tags="$tags" --description="$description" --expected-url="$pinion_post_url" --expected-account="$pinion_post_account" --fallback-browser="$pinion_post_browser"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1552,7 +1420,7 @@ fi</string>
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
-				<integer>0</integer>
+				<integer>1</integer>
 				<key>escaping</key>
 				<integer>62</integer>
 				<key>keyword</key>
@@ -1571,7 +1439,7 @@ fi</string>
 				<string>apr_execution_counter=$((apr_execution_counter + 1))
 
 
-apr_execution_counter=$apr_execution_counter ./pinion list -t "$1"</string>
+pinion_alfred_filter=1 pinion_post_filter=1 apr_execution_counter=$apr_execution_counter ./pinion list -t -- "$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1595,19 +1463,6 @@ apr_execution_counter=$apr_execution_counter ./pinion list -t "$1"</string>
 		<dict>
 			<key>config</key>
 			<dict>
-				<key>seconds</key>
-				<string>6</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.delay</string>
-			<key>uid</key>
-			<string>68426E77-6C32-41BA-A11F-8B90F20AABEE</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
 				<key>lastpathcomponent</key>
 				<false/>
 				<key>onlyshowifquerypopulated</key>
@@ -1627,41 +1482,36 @@ apr_execution_counter=$apr_execution_counter ./pinion list -t "$1"</string>
 			<integer>1</integer>
 		</dict>
 		<dict>
+			<key>config</key>
+			<dict>
+				<key>conditions</key>
+				<array>
+					<dict>
+						<key>inputstring</key>
+						<string>{query}</string>
+						<key>matchcasesensitive</key>
+						<true/>
+						<key>matchmode</key>
+						<integer>4</integer>
+						<key>matchstring</key>
+						<string>^Error: [\s\S]*$</string>
+						<key>outputlabel</key>
+						<string>Save failed</string>
+						<key>uid</key>
+						<string>E5C049F6-9E51-4532-9D0C-2B0865B74012</string>
+					</dict>
+				</array>
+				<key>elselabel</key>
+				<string>Save succeeded</string>
+				<key>hideelse</key>
+				<false/>
+			</dict>
 			<key>type</key>
-			<string>alfred.workflow.utility.junction</string>
+			<string>alfred.workflow.utility.conditional</string>
 			<key>uid</key>
 			<string>988D1146-585C-4DC6-A56B-B303B9A3F173</string>
 			<key>version</key>
 			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>concurrently</key>
-				<false/>
-				<key>escaping</key>
-				<integer>102</integer>
-				<key>script</key>
-				<string># Only announce a *successful* post when the user has asked for it.
-# notify_on_post comes from the workflow's configuration. The notification
-# downstream is set to "only show if query populated", so echoing nothing
-# suppresses it entirely. Failures travel a different path and always notify.
-[ "$notify_on_post" = "1" ] || exit 0
-title=$(echo "$1" | sed -n '2p')
-[ ! -z "$title" ] &amp;&amp; echo "$title"</string>
-				<key>scriptargtype</key>
-				<integer>1</integer>
-				<key>scriptfile</key>
-				<string></string>
-				<key>type</key>
-				<integer>0</integer>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.action.script</string>
-			<key>uid</key>
-			<string>EA97375D-329E-4A06-8BBF-FBF7329AA9CC</string>
-			<key>version</key>
-			<integer>2</integer>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -1675,12 +1525,7 @@ title=$(echo "$1" | sed -n '2p')
 
 [ "$shared" = "false" ] &amp;&amp; shared=true || shared=false
 
-ret=$(./pinion post --shared "$shared" --tags "$tags" --description "$description")
-if [ $? -ne 0 ]; then
-    echo -n "$ret"
-else
-    echo -n "$ret"
-fi</string>
+./pinion post --action-text --shared "$shared" --tags="$tags" --description="$description" --expected-url="$pinion_post_url" --expected-account="$pinion_post_account" --fallback-browser="$pinion_post_browser"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1746,12 +1591,7 @@ rename by iconmu from the Noun Project</string>
 [ "$shared" = "false" ] &amp;&amp; shared=true || shared=false
 [ "$toread" = "false" ] &amp;&amp; toread=true || toread=false
 
-ret=$(./pinion post --shared "$shared" --toread "$toread" --tags "$tags" --description "$description")
-if [ $? -ne 0 ]; then
-    echo -n "$ret"
-else
-    echo -n "$ret"
-fi</string>
+./pinion post --action-text --shared "$shared" --toread "$toread" --tags="$tags" --description="$description" --expected-url="$pinion_post_url" --expected-account="$pinion_post_account" --fallback-browser="$pinion_post_browser"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1794,68 +1634,6 @@ fi</string>
 			<string>2338607E-BB4F-4C20-B121-B2C3A10C1C6E</string>
 			<key>version</key>
 			<integer>3</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>concurrently</key>
-				<false/>
-				<key>escaping</key>
-				<integer>102</integer>
-				<key>script</key>
-				<string>title=$(echo "$1" | sed -n '2p')
-[ ! -z "$title" ] &amp;&amp; echo "$title"</string>
-				<key>scriptargtype</key>
-				<integer>1</integer>
-				<key>scriptfile</key>
-				<string></string>
-				<key>type</key>
-				<integer>0</integer>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.action.script</string>
-			<key>uid</key>
-			<string>BC2AD49B-4564-4816-B814-83431644EC9D</string>
-			<key>version</key>
-			<integer>2</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>inputstring</key>
-				<string>{query}</string>
-				<key>matchcasesensitive</key>
-				<false/>
-				<key>matchmode</key>
-				<integer>2</integer>
-				<key>matchstring</key>
-				<string>Error: .*</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.filter</string>
-			<key>uid</key>
-			<string>59152538-B4C0-4377-AEEA-034B5B257033</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>inputstring</key>
-				<string>{query}</string>
-				<key>matchcasesensitive</key>
-				<false/>
-				<key>matchmode</key>
-				<integer>2</integer>
-				<key>matchstring</key>
-				<string>Successfully posted: .*</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.filter</string>
-			<key>uid</key>
-			<string>D52A87C2-E602-4F4F-A20E-DD9202A461E9</string>
-			<key>version</key>
-			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -1926,7 +1704,7 @@ fi</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string>echo -n $1 | cut -d ' ' -f 2-</string>
+				<string>printf '%s' "${1#Error: }"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -1965,25 +1743,6 @@ fi</string>
 		<dict>
 			<key>config</key>
 			<dict>
-				<key>inputstring</key>
-				<string>{query}</string>
-				<key>matchcasesensitive</key>
-				<false/>
-				<key>matchmode</key>
-				<integer>2</integer>
-				<key>matchstring</key>
-				<string>Error: .*</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.utility.filter</string>
-			<key>uid</key>
-			<string>EF1102C5-4180-496A-A4AF-1FDB7C59D7EE</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
 				<key>browser</key>
 				<string></string>
 				<key>skipqueryencode</key>
@@ -2001,6 +1760,32 @@ fi</string>
 			<string>C2C3C705-A4E7-44AB-BB2B-46F35B1A8E0E</string>
 			<key>version</key>
 			<integer>1</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>concurrently</key>
+				<false/>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>if [ -n "${pinion_open_account-}" ]; then
+    ./pinion remember-bookmark --account="$pinion_open_account" --url="$1" &gt;/dev/null
+fi
+printf '%s' "$1"</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.action.script</string>
+			<key>uid</key>
+			<string>C34B57E5-B788-4643-BF26-7C164DDF100D</string>
+			<key>version</key>
+			<integer>2</integer>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -2031,12 +1816,18 @@ fi</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string># remove old downloads
-rm -rf "$alfred_workflow_cache/latest_release_Pinion.alfredworkflow"
+				<string>if [ -z "${1-}" ]; then
+    echo "Error: No update version selected. Run pcheck again."
+    exit 0
+fi
 
-# download &amp; install
-ret=$(./pinion self -d)
-echo $ret</string>
+result=$(./pinion self -d --expected-version="$1")
+status=$?
+case "$status:$result" in
+    0:Download\ Successful:\ *) printf '%s' "$result" ;;
+    *:Error:\ *) printf '%s\n' "$result" ;;
+    *) echo "Error: Couldn't download the selected workflow. Run pcheck again." ;;
+esac</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2079,17 +1870,12 @@ echo $ret</string>
 				<key>runningsubtext</key>
 				<string>Searching...</string>
 				<key>script</key>
-				<string>#set -o noglob
-#echo "$1" &gt; ~/foo.txt
-#./pinion search $1
-#set +o noglob
-
-set -o noglob
-./pinion search {query}
-
-set +o noglob</string>
+				<string># Split Alfred's search text into words without expanding path patterns.
+set -f
+set -- $1
+pinion_alfred_filter=1 ./pinion search -- "$@"</string>
 				<key>scriptargtype</key>
-				<integer>0</integer>
+				<integer>1</integer>
 				<key>scriptfile</key>
 				<string></string>
 				<key>subtext</key>
@@ -2145,27 +1931,6 @@ set +o noglob</string>
 			<string>alfred.workflow.utility.junction</string>
 			<key>uid</key>
 			<string>3D09B795-2B6D-47D4-B74E-9A95591F9AEE</string>
-			<key>version</key>
-			<integer>1</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>lastpathcomponent</key>
-				<false/>
-				<key>onlyshowifquerypopulated</key>
-				<true/>
-				<key>removeextension</key>
-				<false/>
-				<key>text</key>
-				<string>Download successful. Opening Alfred to install...</string>
-				<key>title</key>
-				<string>Successful</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.output.notification</string>
-			<key>uid</key>
-			<string>78C19F72-991F-47BC-85D0-E69E021AC18A</string>
 			<key>version</key>
 			<integer>1</integer>
 		</dict>
@@ -2293,13 +2058,16 @@ set +o noglob</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string>filename=$(echo "$1" | cut -d ' ' -f 3-)
+				<string>case "${1-}" in
+    "Download Successful: "*.alfredworkflow) filename=${1#Download Successful: } ;;
+    *) echo "Error: No downloaded workflow to install."; exit 0 ;;
+esac
 
-if open -b com.runningwithcrayons.Alfred "$filename"; then
-    echo "Openning Alfred to install..."
-else
-    echo "Error: Couldn't install the downloaded file! ($filename)"
-fi</string>
+result=$(./pinion install-workflow --bundle="$filename")
+case "$?:$result" in
+    0:Opening\ Alfred\ to\ install...|*:Error:\ *) printf '%s\n' "$result" ;;
+    *) echo "Error: Couldn't install the downloaded workflow. Run pcheck again." ;;
+esac</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2313,27 +2081,6 @@ fi</string>
 			<string>221EA45C-D3F1-4FD8-9143-CD10110D5BFC</string>
 			<key>version</key>
 			<integer>2</integer>
-		</dict>
-		<dict>
-			<key>config</key>
-			<dict>
-				<key>browser</key>
-				<string></string>
-				<key>skipqueryencode</key>
-				<false/>
-				<key>skipvarencode</key>
-				<false/>
-				<key>spaces</key>
-				<string></string>
-				<key>url</key>
-				<string>{query}</string>
-			</dict>
-			<key>type</key>
-			<string>alfred.workflow.action.openurl</string>
-			<key>uid</key>
-			<string>51B3C295-B9CD-44D4-B1D3-19038C54735B</string>
-			<key>version</key>
-			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -2361,7 +2108,7 @@ fi</string>
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
-				<string>./pinion search --exact-tag "$selected_tag"</string>
+				<string>pinion_alfred_filter=1 ./pinion search --exact-tag -- "$selected_tag"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2463,7 +2210,7 @@ fi</string>
 				<key>runningsubtext</key>
 				<string>Fetching tags...</string>
 				<key>script</key>
-				<string>./pinion list --suggest false --no-existing-page -t "$1"</string>
+				<string>pinion_alfred_filter=1 ./pinion list --suggest false --no-existing-page -t -- "$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2564,7 +2311,7 @@ fi</string>
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
-				<string>./pinion delete</string>
+				<string>./pinion delete --passive-preview</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2654,7 +2401,11 @@ fi</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string>./pinion delete -u $1</string>
+				<string>if [ "${pinion_delete_direct-}" = 1 ]; then
+    ./pinion delete --action-text --url="$1"
+else
+    ./pinion delete --action-text --url="$1" --expected-account="$pinion_delete_account"
+fi</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -2668,6 +2419,26 @@ fi</string>
 			<string>A2481ADE-0AF6-4C3D-8E9B-E389206CD571</string>
 			<key>version</key>
 			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>argument</key>
+				<string></string>
+				<key>passthroughargument</key>
+				<true/>
+				<key>variables</key>
+				<dict>
+					<key>pinion_delete_direct</key>
+					<string>1</string>
+				</dict>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.utility.argument</string>
+			<key>uid</key>
+			<string>B17E1000-000B-4000-8000-00000000000B</string>
+			<key>version</key>
+			<integer>1</integer>
 		</dict>
 		<dict>
 			<key>config</key>
@@ -2823,7 +2594,10 @@ fi</string>
 				<integer>127</integer>
 				<key>script</key>
 				<string>ret=$(./pinion update)
-echo $ret</string>
+case "$?:$ret" in
+    *:Error:\ *|0:?*) printf '%s' "$ret" ;;
+    *) printf '%s' "Error: Couldn't update the Pinboard cache." ;;
+esac</string>
 				<key>scriptargtype</key>
 				<integer>0</integer>
 				<key>scriptfile</key>
@@ -3112,7 +2886,7 @@ end tell</string>
 				<key>runningsubtext</key>
 				<string>Fetching tags...</string>
 				<key>script</key>
-				<string>./pinion --query-as-item list --no-existing-page --suggest false -t "$1"</string>
+				<string>pinion_alfred_filter=1 pinion_rename_source=1 ./pinion --query-as-item list --no-existing-page --suggest false -t -- "$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -3159,7 +2933,7 @@ end tell</string>
 				<key>runningsubtext</key>
 				<string>Fetching tags...</string>
 				<key>script</key>
-				<string>./pinion --query-as-item list --no-existing-page --suggest false -t "$1"</string>
+				<string>pinion_alfred_filter=1 pinion_rename_editor=1 ./pinion --query-as-item list --no-existing-page --suggest false -t -- "$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -3220,24 +2994,7 @@ end tell</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string>newtag=$1
-
-x=$(./pinion rename "$oldtag" "$newtag")
-
-if [ $? -eq 0 ]; then
-  echo {\"alfredworkflow\": { \
-    \"arg\": \"$x\", \
-    \"variables\": {\"success\": \"true\"}}}
-else
-foo=$(echo $x | tr '"' '\"')
-  echo {\"alfredworkflow\": { \
-    \"arg\": \"\", \
-    \"variables\":  \
-    {\"result\": \" \
-{ \\\"items\\\": [ { \\\"title\\\": \\\"Error in renaming tags\\\", \\\"subtitle\\\": \\\"pr old new\\\", \\\"valid\\\": \\\"false\\\", \\\"icon\\\": { \\\"path\\\": \\\"erroricon.icns\\\" }, \\\"uid\\\": \\\"1\\\" } ] } \
-\"}}}
-
-fi</string>
+				<string>./pinion rename --action-json --expected-account="${pinion_rename_account-}" -- "${oldtag-}" "${1-}"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -3287,20 +3044,59 @@ fi</string>
 		<dict>
 			<key>config</key>
 			<dict>
-				<key>argument</key>
-				<string></string>
-				<key>passthroughargument</key>
+				<key>concurrently</key>
 				<false/>
-				<key>variables</key>
-				<dict>
-					<key>oldtag</key>
-					<string>{query}</string>
-				</dict>
+				<key>escaping</key>
+				<integer>102</integer>
+				<key>script</key>
+				<string>if [ -n "${pinion_rename_account-}" ]; then
+    ./pinion rename --editor-tag="$1" --expected-account="$pinion_rename_account"
+else
+    ./pinion rename --editor-tag="$1"
+fi</string>
+				<key>scriptargtype</key>
+				<integer>1</integer>
+				<key>scriptfile</key>
+				<string></string>
+				<key>type</key>
+				<integer>0</integer>
 			</dict>
 			<key>type</key>
-			<string>alfred.workflow.utility.argument</string>
+			<string>alfred.workflow.action.script</string>
 			<key>uid</key>
 			<string>A853102A-C6D7-49DB-9E51-DA57D84A095A</string>
+			<key>version</key>
+			<integer>2</integer>
+		</dict>
+		<dict>
+			<key>config</key>
+			<dict>
+				<key>conditions</key>
+				<array>
+					<dict>
+						<key>inputstring</key>
+						<string>{var:success}</string>
+						<key>matchcasesensitive</key>
+						<true/>
+						<key>matchmode</key>
+						<integer>0</integer>
+						<key>matchstring</key>
+						<string>true</string>
+						<key>outputlabel</key>
+						<string>Open tag editor</string>
+						<key>uid</key>
+						<string>297CB338-4DF1-4BF3-9F2C-7E4319C53ECE</string>
+					</dict>
+				</array>
+				<key>elselabel</key>
+				<string>Error</string>
+				<key>hideelse</key>
+				<false/>
+			</dict>
+			<key>type</key>
+			<string>alfred.workflow.utility.conditional</string>
+			<key>uid</key>
+			<string>C7A82135-E522-44F7-9DEF-A0D2634712A1</string>
 			<key>version</key>
 			<integer>1</integer>
 		</dict>
@@ -3940,7 +3736,7 @@ EOB
 				<key>scriptfile</key>
 				<string></string>
 				<key>subtext</key>
-				<string>Automatically update bookmarks cache after posting a bookmark</string>
+				<string>Refresh after posting and check for remote changes during search</string>
 				<key>title</key>
 				<string>auto</string>
 				<key>type</key>
@@ -4461,31 +4257,7 @@ end run</string>
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string># The Universal Action hands us the bookmark's URL. Stash it, ask the binary what
-# the bookmark is called right now, then reopen Alfred with that title already in
-# the box — so a one-character correction does not mean retyping the whole thing.
-#
-# The URL travels via the cache directory rather than a workflow variable: Alfred
-# passes variables *through* a Script Filter to the objects after it, but a filter
-# cannot be relied on to read one in its own environment, and the filter is
-# precisely where the current title has to be looked up.
-url="$1"
-mkdir -p "$alfred_workflow_cache"
-stash="$alfred_workflow_cache/retitle"
-
-title=$(./pinion retitle --url "$url" 2&gt;/dev/null) || title=""
-
-printf '%s' "$url" &gt; "$stash.url"
-printf '%s' "$title" &gt; "$stash.title"
-date +%s &gt; "$stash.stamp"
-
-# argv, not string interpolation: titles contain quotes, backslashes and emoji.
-osascript - "retitle $title" &lt;&lt;'APPLESCRIPT'
-on run argv
-	tell application id "com.runningwithcrayons.Alfred" to search (item 1 of argv)
-end run
-APPLESCRIPT
-</string>
+				<string>./pinion retitle --editor-context --url="$1"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -4512,11 +4284,9 @@ APPLESCRIPT
 				<key>argumenttrimmode</key>
 				<integer>0</integer>
 				<key>argumenttype</key>
-				<integer>0</integer>
+				<integer>1</integer>
 				<key>escaping</key>
 				<integer>62</integer>
-				<key>keyword</key>
-				<string>retitle</string>
 				<key>queuedelaycustom</key>
 				<integer>3</integer>
 				<key>queuedelayimmediatelyinitially</key>
@@ -4528,50 +4298,7 @@ APPLESCRIPT
 				<key>runningsubtext</key>
 				<string></string>
 				<key>script</key>
-				<string># Reads what the previous step stashed. Nothing is passed in but the typed query.
-stash="$alfred_workflow_cache/retitle"
-url=$(cat "$stash.url" 2&gt;/dev/null) || url=""
-current=$(cat "$stash.title" 2&gt;/dev/null) || current=""
-stamp=$(cat "$stash.stamp" 2&gt;/dev/null) || stamp=0
-
-# `pretitle` is typeable directly, so a stale stash could rename a bookmark the
-# user is no longer looking at. Posting to Pinboard replaces the record outright,
-# so refuse anything older than ten minutes rather than guess.
-age=$(( $(date +%s) - ${stamp:-0} ))
-[ "$age" -gt 600 ] &amp;&amp; url=""
-
-python3 -c '
-import json, sys
-from urllib.parse import urlparse
-
-url, current = sys.argv[1], sys.argv[2]
-q = sys.argv[3] if len(sys.argv) &gt; 3 else ""
-icon = {"path": "bookmarks.png"}
-
-if not url:
-    items = [{"title": "Nothing to rename",
-              "subtitle": "Find a bookmark, press →, then choose “Rename Pinboard Title”",
-              "valid": False, "icon": icon}]
-else:
-    host = urlparse(url).netloc or url
-    if not q.strip():
-        items = [{"title": "Type the new title…",
-                  "subtitle": (f"Currently “{current}” on {host}" if current
-                               else f"Renaming a bookmark on {host}"),
-                  "valid": False, "icon": icon}]
-    elif q.strip() == current.strip():
-        items = [{"title": q,
-                  "subtitle": "Unchanged — edit the text to rename it",
-                  "valid": False, "icon": icon}]
-    else:
-        items = [{"title": q,
-                  "subtitle": (f"Replaces “{current}” on {host}" if current
-                               else f"Sets the title of the bookmark on {host}"),
-                  "arg": q, "valid": True, "icon": icon}]
-
-print(json.dumps({"items": items}))
-' "$url" "$current" "$1"
-</string>
+				<string>./pinion retitle-filter --title="${1-}"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -4600,17 +4327,7 @@ print(json.dumps({"items": items}))
 				<key>escaping</key>
 				<integer>102</integer>
 				<key>script</key>
-				<string># The URL was stashed when the action started; only the new title is passed in.
-url=$(cat "$alfred_workflow_cache/retitle.url" 2&gt;/dev/null)
-if [ -z "$url" ]; then
-  # Only reachable if the stash vanished mid-flow. Bail out here rather than let
-  # the binary answer with an Alfred error item, which the notification attached
-  # to this action would display as raw JSON.
-  printf '%s' "Lost track of which bookmark to rename. Try the action again."
-  exit 1
-fi
-./pinion retitle --url "$url" -- "$1"
-</string>
+				<string>./pinion retitle-save --selection="${1-}"</string>
 				<key>scriptargtype</key>
 				<integer>1</integer>
 				<key>scriptfile</key>
@@ -4992,13 +4709,6 @@ rename by iconmu from the Noun Project</string>
 			<key>ypos</key>
 			<real>2840.0</real>
 		</dict>
-		<key>51B3C295-B9CD-44D4-B1D3-19038C54735B</key>
-		<dict>
-			<key>xpos</key>
-			<real>700.0</real>
-			<key>ypos</key>
-			<real>1095.0</real>
-		</dict>
 		<key>544EB36F-A1E3-48BE-94FA-73366C521AC3</key>
 		<dict>
 			<key>xpos</key>
@@ -5019,15 +4729,6 @@ rename by iconmu from the Noun Project</string>
 			<real>45.0</real>
 			<key>ypos</key>
 			<real>2640.0</real>
-		</dict>
-		<key>59152538-B4C0-4377-AEEA-034B5B257033</key>
-		<dict>
-			<key>note</key>
-			<string>Error in cache update.</string>
-			<key>xpos</key>
-			<real>900.0</real>
-			<key>ypos</key>
-			<real>440.0</real>
 		</dict>
 		<key>59CC5D01-8A21-4819-BCBD-A02BF648DCD1</key>
 		<dict>
@@ -5073,13 +4774,6 @@ rename by iconmu from the Noun Project</string>
 			<key>ypos</key>
 			<real>580.0</real>
 		</dict>
-		<key>68426E77-6C32-41BA-A11F-8B90F20AABEE</key>
-		<dict>
-			<key>xpos</key>
-			<real>1000.0</real>
-			<key>ypos</key>
-			<real>170.0</real>
-		</dict>
 		<key>6A38E5F0-BA4E-466F-A8A9-5C19AE3898E9</key>
 		<dict>
 			<key>note</key>
@@ -5109,15 +4803,6 @@ rename by iconmu from the Noun Project</string>
 			<real>1530.0</real>
 			<key>ypos</key>
 			<real>1015.0</real>
-		</dict>
-		<key>71EE10F6-37BC-4869-B8A8-0602D9A76863</key>
-		<dict>
-			<key>note</key>
-			<string>Success in posting.</string>
-			<key>xpos</key>
-			<real>795.0</real>
-			<key>ypos</key>
-			<real>130.0</real>
 		</dict>
 		<key>72B7C67C-93D9-4FF4-A1CA-B4546C14A1F0</key>
 		<dict>
@@ -5150,22 +4835,6 @@ rename by iconmu from the Noun Project</string>
 			<real>45.0</real>
 			<key>ypos</key>
 			<real>3540.0</real>
-		</dict>
-		<key>78C19F72-991F-47BC-85D0-E69E021AC18A</key>
-		<dict>
-			<key>xpos</key>
-			<real>1295.0</real>
-			<key>ypos</key>
-			<real>875.0</real>
-		</dict>
-		<key>7BF8F66E-ECC8-4BCD-86CE-5E19FD509604</key>
-		<dict>
-			<key>note</key>
-			<string>Success in cache update.</string>
-			<key>xpos</key>
-			<real>905.0</real>
-			<key>ypos</key>
-			<real>130.0</real>
 		</dict>
 		<key>7D0D3480-DBAF-4261-B304-169C58BDA745</key>
 		<dict>
@@ -5296,7 +4965,14 @@ rename by iconmu from the Noun Project</string>
 		<key>A853102A-C6D7-49DB-9E51-DA57D84A095A</key>
 		<dict>
 			<key>xpos</key>
-			<real>375.0</real>
+			<real>320.0</real>
+			<key>ypos</key>
+			<real>2310.0</real>
+		</dict>
+		<key>C7A82135-E522-44F7-9DEF-A0D2634712A1</key>
+		<dict>
+			<key>xpos</key>
+			<real>385.0</real>
 			<key>ypos</key>
 			<real>2310.0</real>
 		</dict>
@@ -5319,7 +4995,7 @@ rename by iconmu from the Noun Project</string>
 		<key>B17E1000-0002-4000-8000-000000000002</key>
 		<dict>
 			<key>note</key>
-			<string>Keep the URL.</string>
+			<string>Fetch the current title and open the editor.</string>
 			<key>xpos</key>
 			<real>1900.0</real>
 			<key>ypos</key>
@@ -5384,15 +5060,6 @@ rename by iconmu from the Noun Project</string>
 			<key>ypos</key>
 			<real>1990.0</real>
 		</dict>
-		<key>BC2AD49B-4564-4816-B814-83431644EC9D</key>
-		<dict>
-			<key>note</key>
-			<string>Show error in cache update.</string>
-			<key>xpos</key>
-			<real>1120.0</real>
-			<key>ypos</key>
-			<real>410.0</real>
-		</dict>
 		<key>BFD4441D-1EB3-4F5E-9E04-96678AD399E9</key>
 		<dict>
 			<key>xpos</key>
@@ -5428,15 +5095,6 @@ rename by iconmu from the Noun Project</string>
 			<key>ypos</key>
 			<real>1725.0</real>
 		</dict>
-		<key>D52A87C2-E602-4F4F-A20E-DD9202A461E9</key>
-		<dict>
-			<key>note</key>
-			<string>Success in posting.</string>
-			<key>xpos</key>
-			<real>800.0</real>
-			<key>ypos</key>
-			<real>440.0</real>
-		</dict>
 		<key>D5939049-C73A-4872-9625-87A9F9BE886C</key>
 		<dict>
 			<key>colorindex</key>
@@ -5447,6 +5105,13 @@ rename by iconmu from the Noun Project</string>
 			<real>45.0</real>
 			<key>ypos</key>
 			<real>1995.0</real>
+		</dict>
+		<key>C34B57E5-B788-4643-BF26-7C164DDF100D</key>
+		<dict>
+			<key>xpos</key>
+			<real>460.0</real>
+			<key>ypos</key>
+			<real>670.0</real>
 		</dict>
 		<key>D628D994-1BDE-4B90-89A6-19287F0AB363</key>
 		<dict>
@@ -5490,30 +5155,12 @@ rename by iconmu from the Noun Project</string>
 			<key>ypos</key>
 			<real>3540.0</real>
 		</dict>
-		<key>EA97375D-329E-4A06-8BBF-FBF7329AA9CC</key>
-		<dict>
-			<key>note</key>
-			<string>Show successful cache update.</string>
-			<key>xpos</key>
-			<real>1120.0</real>
-			<key>ypos</key>
-			<real>240.0</real>
-		</dict>
 		<key>EC26DEC8-AB37-411E-BFB2-73C7CB76C41C</key>
 		<dict>
 			<key>xpos</key>
 			<real>1120.0</real>
 			<key>ypos</key>
 			<real>1845.0</real>
-		</dict>
-		<key>EF1102C5-4180-496A-A4AF-1FDB7C59D7EE</key>
-		<dict>
-			<key>note</key>
-			<string>Error in posting.</string>
-			<key>xpos</key>
-			<real>800.0</real>
-			<key>ypos</key>
-			<real>610.0</real>
 		</dict>
 		<key>F20CC730-E792-4A3E-9C0D-84F0EB1A8816</key>
 		<dict>
@@ -5658,7 +5305,7 @@ rename by iconmu from the Noun Project</string>
 				<string>Enabled</string>
 			</dict>
 			<key>description</key>
-			<string>Refresh the local cache automatically after posting a bookmark.</string>
+			<string>Refresh the local cache after posting and check Pinboard for changes when searching or browsing tags.</string>
 			<key>label</key>
 			<string>Auto-update cache</string>
 			<key>type</key>
@@ -5767,7 +5414,7 @@ rename by iconmu from the Noun Project</string>
 		</dict>
 	</array>
 	<key>version</key>
-	<string>0.27.1</string>
+	<string>0.28.0</string>
 	<key>webaddress</key>
 	<string>https://github.com/vmlrodrigues/pinion</string>
 </dict>

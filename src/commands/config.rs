@@ -1,4 +1,5 @@
 use super::{process, Config, SubCommand};
+use crate::workflow_config::pinboard_username;
 use alfred::ItemBuilder;
 use chrono::prelude::Local;
 
@@ -25,7 +26,7 @@ pub fn run(x: SubCommand) {
             print_config = display;
             let mut token = String::new();
             if let Some(ref t) = auth_token {
-                if t.0.find(':').is_some() {
+                if pinboard_username(&t.0).is_ok() {
                     token.clone_from(&t.0);
                 } else {
                     crate::show_error_alfred("Invalid Auth Token format!".to_string());
@@ -53,6 +54,12 @@ pub fn run(x: SubCommand) {
                     process::exit(1);
                 }
                 config.auth_token = token;
+                if let Err(error) = super::update::request_authentication_reset(&config) {
+                    warn!(
+                        "Couldn't resume Pinboard sync: {}",
+                        crate::redact_token(&error.to_string())
+                    );
+                }
             }
             config.pins_to_show.update(number_pins);
             config.tags_to_show.update(number_tags);
@@ -145,13 +152,15 @@ fn show_config(config: &Config) {
             .arg("pcheck")
             .icon_path("check_update.png")
             .into_item(),
-        ItemBuilder::new(
-            config
-                .update_time
-                .with_timezone(&Local)
-                .format("%Y-%m-%d %H:%M:%S")
-                .to_string(),
-        )
+        ItemBuilder::new(super::update::last_cache_update(config).map_or_else(
+            || "No cache update yet".to_string(),
+            |updated_at| {
+                updated_at
+                    .with_timezone(&Local)
+                    .format("%Y-%m-%d %H:%M:%S")
+                    .to_string()
+            },
+        ))
         .subtitle("Latest cache update")
         .arg("pupdate")
         .icon_path("auto_update.png")

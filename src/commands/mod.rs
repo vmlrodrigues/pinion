@@ -1,3 +1,4 @@
+use std::fs::{File, OpenOptions};
 use std::io;
 use std::{env, process};
 
@@ -16,98 +17,72 @@ mod search;
 mod update;
 mod upgrade;
 
+mod bookmark_history;
 mod browser_info;
 
-use alfred_rs::updater::GithubReleaser;
-use alfred_rs::updater::Updater;
+pub(crate) use bookmark_history::remember_bookmark;
+pub(crate) use list::suggest_post_tags;
+pub(crate) use rename::action_error as rename_action_error;
+pub(crate) use retitle::{retitle_editor_error, retitle_filter, retitle_filter_error};
+pub(crate) use upgrade::{check_workflow_update, install_workflow, verify_workflow_release};
 
 pub(super) struct Runner<'api, 'pin> {
     pub config: Option<Config>,
     pub pinboard: Option<Pinboard<'api, 'pin>>,
-    pub updater: Option<Updater<GithubReleaser>>,
+    pub rerun_seconds: Option<u8>,
+    pub sync_authentication_failed: bool,
+    pub cache_wait_item: Option<alfred::Item<'static>>,
 }
 
 impl Runner<'_, '_> {
-    fn write_output_items<'a, 'b, I, J>(
-        &self,
-        items: I,
-        vars: Option<J>,
-    ) -> Result<(), Box<dyn std::error::Error>>
+    fn lock_bookmark_mutations(&self) -> Result<File, Box<dyn std::error::Error>> {
+        let cache_dir = self.config.as_ref().unwrap().bookmark_cache_dir()?;
+        let lock = OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(cache_dir.join("pinboard-mutations.lock"))?;
+        lock.lock()?;
+        Ok(lock)
+    }
+
+    pub(super) fn write_output_items<'a, 'b, I, J>(&'b self, items: I, vars: Option<J>)
     where
         I: IntoIterator<Item = alfred::Item<'a>>,
         J: IntoIterator<Item = (&'b str, &'b str)>,
     {
         debug!("Starting in write_output_items");
         let mut output_items = items.into_iter().collect::<Vec<alfred::Item>>();
+        output_items.extend(self.cache_wait_item.clone());
+        let mut rerun = self.rerun_seconds;
+        if self.sync_authentication_failed {
+            output_items.push(
+                alfred::ItemBuilder::new("Pinboard sync paused")
+                    .subtitle(rusty_pin::pinboard::ApiError::Authentication.to_string())
+                    .icon_path("erroricon.icns")
+                    .valid(false)
+                    .into_item(),
+            );
+        }
 
-        match self.get_upgrade_item() {
-            Ok(Some(item)) => output_items.push(item),
-            Ok(None) => {}
+        match self.automatic_upgrade_item() {
+            Ok((item, update_rerun)) => {
+                output_items.extend(item);
+                if let Some(seconds) = update_rerun {
+                    rerun = Some(rerun.map_or(seconds, |current| current.min(seconds)));
+                }
+            }
             Err(e) => error!("Error checking for workflow updates: {:?}", e),
         }
 
-        let json_format = self.config.as_ref().unwrap().can_use_json();
-        // Get username from auth_token.
-        //
-        // Returning early here used to write *no items at all* and exit 0, so a
-        // malformed token produced an empty Alfred window with the reason only on
-        // stderr. Show the error instead.
-        let token = &self.config.as_ref().unwrap().auth_token;
-        let Some(idx) = token.find(':') else {
-            error!("auth token has no ':' separator");
-            crate::write_to_alfred(
-                vec![crate::alfred_error_item(
-                    "Bad Auth. Token! Set it again with `pa`.",
-                )],
-                json_format,
-                // No `username` variable to export: we could not parse one.
-                None::<Vec<(&str, &str)>>,
-            );
-            return Ok(());
-        };
-        let username = &self.config.as_ref().unwrap().auth_token.as_str()[..idx];
-        let mut variables = vec![("username", username)];
-        if let Some(items) = vars {
-            items.into_iter().for_each(|(k, v)| {
-                variables.push((k, v));
-            });
-        }
-        crate::write_to_alfred(output_items, json_format, Some(variables));
-        Ok(())
-    }
-
-    fn get_upgrade_item(&self) -> Result<Option<alfred::Item<'_>>, Box<dyn std::error::Error>> {
-        debug!("Starting in get_upgrade_item");
-        self.updater
-            .as_ref()
-            .unwrap()
-            .update_ready()
-            .map(|update| {
-                if update {
-                    info!("Update is available");
-                    // Since an update is available `latest_version().unwrap()` will not fail
-                    let new_version = self
-                        .updater
-                        .as_ref()
-                        .unwrap()
-                        .latest_avail_version()
-                        .unwrap();
-                    let old_version = self.updater.as_ref().unwrap().current_version();
-                    Some(
-                        alfred::ItemBuilder::new("New Version Is Available for Pinion! 🎉")
-                            .subtitle(format!(
-                                "Click to download & upgrade {old_version} ⟶ {new_version}"
-                            ))
-                            .icon_path("auto_update.png")
-                            .variable("workflow_update_ready", "1")
-                            .arg("update")
-                            .into_item(),
-                    )
-                } else {
-                    info!("Update UNAVAILABLE: You have the latest version of workflow!");
-                    None
-                }
-            })
-            .map_err(Into::into)
+        let config = self.config.as_ref().unwrap();
+        let json_format = config.can_use_json();
+        let variables = config
+            .pinboard_username()
+            .ok()
+            .map(|username| ("username", username))
+            .into_iter()
+            .chain(vars.into_iter().flatten());
+        crate::write_alfred_results(output_items, json_format, Some(variables), rerun);
     }
 }

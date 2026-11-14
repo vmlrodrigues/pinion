@@ -51,7 +51,7 @@ use serde::Serialize;
 use serde_json::{from_value, to_value, Value};
 use std::collections::HashMap;
 use std::fs::File;
-use std::io::{BufReader, BufWriter};
+use std::io::{BufReader, BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// Workflow data that will be persisted to disk
@@ -201,31 +201,27 @@ impl Data {
         Self::write_data_to_disk(p, data)
     }
 
-    fn write_data_to_disk<P, V>(p: P, data: &V) -> Result<()>
+    /// Atomically write JSON to an explicit path in an existing directory.
+    ///
+    /// # Errors
+    /// Returns an error if serialization or a file operation fails.
+    pub fn write_data_to_disk<P, V>(p: P, data: &V) -> Result<()>
     where
         P: AsRef<Path> + std::fmt::Debug,
         V: Serialize,
     {
-        use std::fs;
-        use tempfile::Builder;
-        let wfc = env::workflow_cache().ok_or_else(|| {
-            anyhow!("missing env variable for cache dir. forgot to set workflow bundle id?")
-        })?;
-        let named_tempfile = Builder::new()
-            .prefix("alfred_rs_temp")
-            .suffix(".json")
-            .rand_bytes(5)
-            .tempfile_in(wfc)?;
-
-        let fn_temp = named_tempfile.as_ref();
-        File::create(&fn_temp).and_then(|fp| {
-            let buf_writer = BufWriter::with_capacity(0x1000, fp);
-            serde_json::to_writer(buf_writer, data)?;
-            Ok(())
-        })?;
-
-        // Rename over to main file name
-        fs::rename(fn_temp, p)?;
+        let destination = p.as_ref();
+        let directory = destination
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let mut temporary = tempfile::NamedTempFile::new_in(directory)?;
+        {
+            let mut writer = BufWriter::with_capacity(0x1000, temporary.as_file_mut());
+            serde_json::to_writer(&mut writer, data)?;
+            writer.flush()?;
+        }
+        temporary.persist(destination)?;
         Ok(())
     }
 
@@ -261,7 +257,11 @@ impl Data {
         Self::read_data_from_disk(&p).ok()
     }
 
-    fn read_data_from_disk<V>(p: &Path) -> Result<V>
+    /// Read JSON from an explicit path.
+    ///
+    /// # Errors
+    /// Returns an error if the file cannot be read or deserialized.
+    pub fn read_data_from_disk<V>(p: &Path) -> Result<V>
     where
         V: for<'d> Deserialize<'d>,
     {
@@ -351,6 +351,34 @@ mod tests {
         let what_now: DateTime<Utc> =
             Data::load_from_file(path).expect("couldn't get value from test file");
         assert_eq!(now2, what_now);
+    }
+
+    #[test]
+    fn it_keeps_the_previous_json_when_serialization_fails() {
+        struct InvalidData;
+
+        impl Serialize for InvalidData {
+            fn serialize<S: serde::Serializer>(
+                &self,
+                serializer: S,
+            ) -> std::result::Result<S::Ok, S::Error> {
+                use serde::ser::{Error, SerializeSeq};
+                let mut sequence = serializer.serialize_seq(None)?;
+                sequence.serialize_element("partial data")?;
+                Err(S::Error::custom("test serialization failure"))
+            }
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("state.json");
+        Data::write_data_to_disk(&path, &"last valid data").unwrap();
+
+        assert!(Data::write_data_to_disk(&path, &InvalidData).is_err());
+        assert_eq!(
+            Data::read_data_from_disk::<String>(&path).unwrap(),
+            "last valid data"
+        );
+        assert_eq!(dir.path().read_dir().unwrap().count(), 1);
     }
 
     pub(super) fn setup_workflow_env_vars(secure_temp_dir: bool) -> PathBuf {

@@ -84,7 +84,7 @@ pub enum SubCommand {
         #[arg(short = 't', long = "tags-only")]
         tags_only: Option<bool>,
 
-        /// After posting a bookmark to Pinboard, update the local cache files. [default: true]
+        /// Refresh the cache after posting and check for remote changes during search.
         #[arg(short = 'u', long = "auto-update")]
         auto_update: Option<bool>,
 
@@ -134,6 +134,24 @@ pub enum SubCommand {
         /// Mark this bookmark as toread (overrides user's settings)
         #[arg(short = 'b', long = "toread")]
         toread: Option<bool>,
+        #[arg(long, hide = true, requires = "expected_account")]
+        expected_url: Option<String>,
+        #[arg(long, hide = true, requires = "expected_url")]
+        expected_account: Option<String>,
+        #[arg(long, hide = true, requires_all = ["expected_url", "expected_account"])]
+        fallback_browser: Option<String>,
+        #[arg(long, hide = true, requires = "expected_url")]
+        action_text: bool,
+    },
+
+    #[command(hide = true)]
+    SuggestPostTags {
+        #[arg(long)]
+        url: String,
+        #[arg(long)]
+        account: String,
+        #[arg(long)]
+        job: String,
     },
 
     /// Deletes a bookmark for the current page of the active browser.
@@ -147,6 +165,12 @@ pub enum SubCommand {
         /// Tag to be deleted.
         #[arg(short = 't', long = "tag")]
         tag: Option<String>,
+        #[arg(long, hide = true)]
+        expected_account: Option<String>,
+        #[arg(long, hide = true, conflicts_with_all = ["url", "tag", "expected_account"])]
+        passive_preview: bool,
+        #[arg(long, hide = true, requires = "url")]
+        action_text: bool,
     },
 
     /// Renames a tag.
@@ -155,6 +179,17 @@ pub enum SubCommand {
         /// tags for renaming (tag1 -> tag2)
         #[arg(num_args = 2)]
         tags: Vec<String>,
+        #[arg(long, hide = true, conflicts_with = "tags")]
+        editor_tag: Option<String>,
+        #[arg(long, hide = true)]
+        expected_account: Option<String>,
+        #[arg(
+            long,
+            hide = true,
+            requires = "expected_account",
+            conflicts_with = "editor_tag"
+        )]
+        action_json: bool,
     },
 
     /// Changes the title of an existing bookmark.
@@ -163,12 +198,48 @@ pub enum SubCommand {
         /// URL of the bookmark to retitle.
         #[arg(short = 'u', long = "url")]
         url: String,
+        #[arg(long, hide = true, conflicts_with = "title")]
+        editor_context: bool,
+        #[arg(long, hide = true)]
+        expected_account: Option<String>,
+        /// Only save if the bookmark still has this title.
+        #[arg(long)]
+        expected_title: Option<String>,
+        #[arg(long, hide = true, requires = "title")]
+        action_text: bool,
         /// The new title. Taken as the remaining arguments and joined with spaces,
         /// so it does not need quoting.
         ///
-        /// Omit it to print the bookmark's current title instead of changing
-        /// anything — that is how the workflow pre-fills the field for editing.
+        /// Omit it to print the bookmark's current title.
         title: Vec<String>,
+    },
+
+    #[command(hide = true)]
+    RetitleFilter {
+        #[arg(long)]
+        title: String,
+    },
+
+    #[command(hide = true)]
+    RetitleSave {
+        #[arg(long)]
+        selection: String,
+    },
+
+    #[command(hide = true)]
+    VerifyWorkflowRelease {
+        #[arg(long)]
+        tag: String,
+        #[arg(long)]
+        bundle: std::path::PathBuf,
+    },
+
+    #[command(hide = true)]
+    RememberBookmark {
+        #[arg(long)]
+        account: String,
+        #[arg(long)]
+        url: String,
     },
 
     /// Searches bookmarks.
@@ -216,6 +287,21 @@ pub enum SubCommand {
     #[command(name = "update")]
     Update,
 
+    /// Check for bookmark changes outside the Alfred search process.
+    #[command(hide = true)]
+    SyncBookmarks,
+
+    /// Check GitHub outside the Alfred search process.
+    #[command(hide = true)]
+    CheckWorkflowUpdate,
+
+    /// Open a selected and downloaded workflow in Alfred.
+    #[command(hide = true)]
+    InstallWorkflow {
+        #[arg(long)]
+        bundle: std::path::PathBuf,
+    },
+
     /// Check for or download the latest version of this workflow
     #[command(name = "self")]
     SelfUpdate {
@@ -223,8 +309,12 @@ pub enum SubCommand {
         #[arg(short = 'c')]
         check: bool,
 
-        /// Download the latest version of thir workflow and save it to its cache folder
+        /// Download a newer version of this workflow to its cache folder
         #[arg(short = 'd')]
         download: bool,
+
+        /// Download only if this version is still available
+        #[arg(long, requires = "download")]
+        expected_version: Option<semver::Version>,
     },
 }

@@ -4,6 +4,7 @@ use alfred::{Item, ItemBuilder, Modifier};
 use rusty_pin::pinboard::SearchType;
 
 use std::borrow::Cow;
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 
 // TODO: Investigate why content of text_copy is not used within Alfred when user presses ⌘-C
@@ -21,8 +22,9 @@ impl Runner<'_, '_> {
                 query,
             } => {
                 info!("query: {:?}", query);
-                let pins_to_show = self.config.as_ref().unwrap().pins_to_show;
-                let url_vs_tags = self.config.as_ref().unwrap().show_url_vs_tags;
+                let config = self.config.as_ref().unwrap();
+                let rank_by_recent_opens =
+                    !showonlyurl && std::env::var_os("pinion_alfred_filter").is_some();
                 let pinboard = self.pinboard.as_ref().unwrap();
                 let user_query = query.join(" ");
                 let variables = vec![("user_query", user_query.as_str())];
@@ -45,7 +47,7 @@ impl Runner<'_, '_> {
                     // If user is not asking explicitly for search fields, then search based on
                     // configuration set by user
                     if search_fields.is_empty() {
-                        if self.config.as_ref().unwrap().tag_only_search {
+                        if config.tag_only_search {
                             search_fields.push(SearchType::TagOnly);
                         } else {
                             search_fields = vec![
@@ -59,13 +61,14 @@ impl Runner<'_, '_> {
                     debug!("search fields: {:?}", search_fields);
                 }
 
+                let history = rank_by_recent_opens.then(|| super::bookmark_history::ranks(config));
                 let items = process(
                     query,
                     &search_fields,
                     exacttag,
-                    pins_to_show,
-                    url_vs_tags,
+                    config,
                     pinboard,
+                    history.as_ref(),
                 );
                 if showonlyurl {
                     for item in items {
@@ -80,8 +83,8 @@ impl Runner<'_, '_> {
                             .write_all(b"\n")
                             .expect("Couldn't write to stdout");
                     }
-                } else if let Err(e) = self.write_output_items(items, Some(variables)) {
-                    error!("search: Couldn't write to Alfred: {:?}", e);
+                } else {
+                    self.write_output_items(items, Some(variables));
                 }
             }
             _ => unreachable!(),
@@ -95,21 +98,40 @@ fn process<'a>(
     query: Vec<String>,
     search_fields: &[SearchType],
     exacttag: bool,
-    pins_to_show: u8,
-    url_vs_tags: bool,
+    config: &super::Config,
     pinboard: &'a Pinboard<'a, 'a>,
+    ranks: Option<&HashMap<String, usize>>,
 ) -> Vec<Item<'a>> {
     debug!("Starting in search::process");
     assert!(!query.is_empty());
+    let account = config.pinboard_username().unwrap_or_default();
 
+    let rank = |url: &str| {
+        ranks
+            .and_then(|ranks| ranks.get(url))
+            .copied()
+            .unwrap_or(usize::MAX)
+    };
     let r = if exacttag {
         debug!("finding all pins having exact tag: {}", query[0]);
-        pinboard.find_tag(query[0].as_str())
+        pinboard.find_tag(query[0].as_str()).map(|result| {
+            result.map(|mut pins| {
+                if ranks.is_some_and(|ranks| !ranks.is_empty()) {
+                    pins.sort_by_cached_key(|pin| rank(pin.url.as_ref()));
+                }
+                pins
+            })
+        })
     } else {
         debug!("searching for pins containing all of {:?}", &query);
-        pinboard.search(&query, search_fields)
+        if ranks.is_some_and(|ranks| !ranks.is_empty()) {
+            pinboard.search_ranked(&query, search_fields, rank)
+        } else {
+            pinboard.search(&query, search_fields)
+        }
     };
 
+    let mut seen_urls = HashSet::new();
     match r {
         Err(e) => vec![crate::alfred_error_item(e.to_string())],
         Ok(r) => {
@@ -121,8 +143,10 @@ fn process<'a>(
                 // Some results were found
                 Some(pins) => pins
                     .iter()
+                    // Older caches can contain duplicate rows from Pinboard.
+                    .filter(|pin| seen_urls.insert(pin.url.as_ref()))
                     // Only take pins_to_show of them to show
-                    .take(pins_to_show as usize)
+                    .take(config.pins_to_show as usize)
                     // Create Alfred items that support:
                     // - quicklook
                     // - opening bookmark in a browser
@@ -130,7 +154,7 @@ fn process<'a>(
                     // - holding modifiers to
                     //   show extended text, tags or open the link in https://pinboard.in
                     .map(|pin| {
-                        let (subtitle, modifier_subtitle) = if url_vs_tags {
+                        let (subtitle, modifier_subtitle) = if config.show_url_vs_tags {
                             (pin.tags.as_ref(), pin.url.as_ref())
                         } else {
                             (pin.url.as_ref(), pin.tags.as_ref())
@@ -139,6 +163,7 @@ fn process<'a>(
                             .subtitle(subtitle)
                             .arg(pin.url.as_ref())
                             .variable("tags", pin.tags.as_ref())
+                            .variable("pinion_open_account", account.to_owned())
                             .quicklook_url(pin.url.as_ref())
                             .text_large_type(pin.title.as_ref())
                             .text_copy(pin.url.as_ref())

@@ -1,13 +1,55 @@
-use super::{browser_info, env, Config, Pinboard, Runner, SubCommand, Tag};
+use super::{browser_info, env, Config, Runner, SubCommand, Tag};
 use crate::cli::Opt;
-use std::{thread, time};
+use chrono::{DateTime, Utc};
 
 use alfred::{Item, ItemBuilder, Modifier};
-use alfred_rs::Data;
+
+mod suggestions;
+pub(crate) use suggestions::suggest_post_tags;
+use suggestions::{
+    authentication_generation, poll_suggestions, Suggestions, SUGGESTION_RETRY_DELAY,
+};
+
+const POST_PAGE_VARIABLE: &str = "pinion_post_page";
+
+#[derive(Deserialize, Serialize)]
+struct PostPage {
+    account: String,
+    url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    fallback_browser: Option<String>,
+    suggested_tags: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    suggestion_retry_at: Option<DateTime<Utc>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    suggestion_job: Option<String>,
+    #[serde(default)]
+    suggestion_authentication_failed: bool,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    suggestion_authentication_generation: Option<DateTime<Utc>>,
+}
+
+impl PostPage {
+    fn rerun_seconds(&self, suggest: bool) -> Option<u8> {
+        if self.url.is_none() && self.fallback_browser.is_none() {
+            return Some(5);
+        }
+        if !suggest || self.suggested_tags.is_some() || self.url.is_none() {
+            return None;
+        }
+        // Round up to the deadline, limited by Alfred's maximum rerun interval.
+        let seconds = self
+            .suggestion_retry_at
+            .and_then(|retry_at| (retry_at - Utc::now()).to_std().ok())
+            .map_or(1, |remaining| {
+                remaining.as_secs() + u64::from(remaining.subsec_nanos() != 0)
+            });
+        Some(u8::try_from(seconds).unwrap_or(5).clamp(1, 5))
+    }
+}
 
 impl Runner<'_, '_> {
-    // pub fn list(&self, cmd: SubCommand) {
-    pub fn list(&self, opt: Opt) {
+    pub fn list(&mut self, opt: Opt, query_started_at: DateTime<Utc>) {
         let cmd = opt.cmd;
         let query_item = opt.query_as_item;
         match cmd {
@@ -16,7 +58,31 @@ impl Runner<'_, '_> {
                 suggest,
                 no_existing_page,
                 query,
-            } => self.process(tags, suggest, no_existing_page, query_item, query),
+            } => {
+                let config = self.config.as_ref().unwrap();
+                let show_bookmarked = !no_existing_page && config.page_is_bookmarked;
+                let suggest = suggest.unwrap_or(config.suggest_tags);
+                let post_filter = env::var_os("pinion_post_filter").is_some();
+                let notes = query.as_deref().is_some_and(|query| query.contains(';'));
+                let page = if tags && (post_filter || !notes && (show_bookmarked || suggest)) {
+                    // Fetch optional suggestions before starting the background check.
+                    post_page(config, suggest && !notes)
+                } else {
+                    None
+                };
+                let page_rerun = page
+                    .as_ref()
+                    .filter(|page| config.pinboard_username().ok() == Some(&page.account))
+                    .and_then(|page| page.rerun_seconds(suggest && !notes));
+                if self.pinboard.as_ref().unwrap().cache_is_available() {
+                    self.schedule_sync(query_started_at);
+                }
+                if let Some(seconds) = page_rerun {
+                    self.rerun_seconds =
+                        Some(self.rerun_seconds.map_or(seconds, |sync| sync.min(seconds)));
+                }
+                self.process(tags, show_bookmarked, query_item, query, page.as_ref());
+            }
             _ => unreachable!(),
         }
     }
@@ -25,10 +91,10 @@ impl Runner<'_, '_> {
     fn process(
         &self,
         tags: bool,
-        suggest: Option<bool>,
-        no_existing_page: bool,
+        show_bookmarked: bool,
         query_item: bool,
         q: Option<String>,
+        page: Option<&PostPage>,
     ) {
         debug!("Starting in list::process");
         let config = self.config.as_ref().unwrap();
@@ -50,17 +116,92 @@ impl Runner<'_, '_> {
         if tags {
             // Search the tags using the last 'word' in 'q'
             let queries = q.unwrap_or_default();
+            let account = config.pinboard_username().unwrap_or_default();
+            let post_filter = env::var_os("pinion_post_filter").is_some();
+            if let Some(page) = page.filter(|page| post_filter && page.account != account) {
+                let status = ItemBuilder::new("The Pinboard account changed")
+                    .subtitle("Open `p` again to save to the current account.")
+                    .icon_path("erroricon.icns")
+                    .valid(false)
+                    .into_item();
+                let page = serde_json::to_string(page).unwrap_or_default();
+                self.write_output_items([status], Some([(POST_PAGE_VARIABLE, page.as_str())]));
+                return;
+            }
+            let rename_source = env::var_os("pinion_rename_source").is_some();
+            let rename_context = env::var_os("pinion_rename_editor").is_some().then(|| {
+                (
+                    env::var("oldtag").unwrap_or_default(),
+                    env::var("pinion_rename_account").unwrap_or_default(),
+                )
+            });
+            let page_url = page
+                .and_then(|page| page.url.as_deref())
+                .unwrap_or_default();
+            let fallback_browser = page
+                .and_then(|page| page.fallback_browser.as_deref())
+                .unwrap_or_default();
+            let page_json = page.and_then(|page| serde_json::to_string(page).ok());
+            let mut variables = Vec::new();
+            if let Some(page) = page_json.as_deref() {
+                variables.push((POST_PAGE_VARIABLE, page));
+            }
+            if let Some((tag, account)) = rename_context.as_ref() {
+                variables.extend([
+                    ("oldtag", tag.as_str()),
+                    ("pinion_rename_account", account.as_str()),
+                ]);
+            }
+            let bind_selection = |item: &mut ItemBuilder<'_>| {
+                if post_filter {
+                    item.set_variable("pinion_post_account", account.to_owned());
+                    item.set_variable("pinion_post_url", page_url.to_owned());
+                    item.set_variable("pinion_post_browser", fallback_browser.to_owned());
+                    if !fallback_browser.is_empty() {
+                        item.set_subtitle("Bookmark the active browser tab on Return.");
+                        item.set_subtitle_mod(
+                            Modifier::Option,
+                            format!("{option_subtitle} Uses the active tab on Return."),
+                        );
+                        item.set_subtitle_mod(
+                            Modifier::Control,
+                            format!("{control_subtitle} Uses the active tab on Return."),
+                        );
+                    } else if page_url.is_empty() {
+                        item.set_valid(false);
+                        item.set_subtitle("Couldn't identify the browser page. Retrying…");
+                    }
+                } else if rename_source {
+                    item.set_variable("pinion_rename_account", account.to_owned());
+                }
+            };
+
+            let bookmark_present = (show_bookmarked
+                && page
+                    .and_then(|page| page.url.as_deref())
+                    .is_some_and(|url| pinboard.has_cached_url(url)))
+            .then(|| {
+                ItemBuilder::new("You already have the bookmark!")
+                    .icon_path("bookmark-delete.png")
+                    .valid(false)
+                    .into_item()
+            });
 
             // Check if user has entered ';' which indicates they are providing a description.
             // So no need to search for tags!
-            if queries.contains(';') {
+            if !query_item && queries.contains(';') {
                 let trim_chars: &[_] = &['\t', ' ', '\\', '\n'];
                 let pin_info = queries
                     .splitn(2, ';')
                     .map(|s| s.trim_matches(trim_chars))
                     .collect::<Vec<&str>>();
                 debug!("  pin_info: {:?}", pin_info);
-                let mut item = ItemBuilder::new("Hit Return to bookmark the page!")
+                let title = if post_filter && pin_info[0].is_empty() {
+                    "Bookmark the page without tags"
+                } else {
+                    "Hit Return to bookmark the page!"
+                };
+                let mut item = ItemBuilder::new(title)
                     .icon_path("upload.png")
                     .arg(queries.as_str())
                     .variable("shared", private_pin)
@@ -71,31 +212,32 @@ impl Runner<'_, '_> {
                 if !pin_info[1].is_empty() {
                     item = item.variable("description", pin_info[1]);
                 }
-                let item = vec![item.into_item()];
-                if let Err(e) = self.write_output_items(item, Option::<Vec<(&str, &str)>>::None) {
-                    error!("list: Couldn't write to Alfred: {:?}", e);
-                }
+                bind_selection(&mut item);
+                let items = std::iter::once(item.into_item()).chain(bookmark_present);
+                self.write_output_items(items, Some(variables));
                 return;
             }
 
             let query_words: Vec<&str> = queries.split_whitespace().collect();
+            let popular_tags = page
+                .and_then(|page| page.suggested_tags.as_deref())
+                .unwrap_or_default()
+                .iter()
+                .map(|tag| Tag::new(tag.clone(), 0).set_popular())
+                .collect::<Vec<_>>();
 
             let last_query_word_tag;
             let mut alfred_items = Vec::with_capacity(config.tags_to_show as usize + 1);
 
-            // First try to get list of popular tags from Pinboard
-            let tag_suggestion = suggest.unwrap_or(config.suggest_tags);
-            let popular_tags = if tag_suggestion {
-                // if suggest.unwrap_or(config.suggest_tags) {
-                suggest_tags()
-            } else {
-                vec![]
-            };
-
             let last_query_word = query_words.last().unwrap_or(&"");
             let mut top_items: Vec<Tag> = Vec::with_capacity(2usize);
 
-            match pinboard.search_list_of_tags(last_query_word) {
+            let results = if pinboard.cache_is_available() {
+                pinboard.search_list_of_tags(last_query_word)
+            } else {
+                Ok(None)
+            };
+            match results {
                 Err(e) => crate::show_error_alfred(e.to_string()),
                 Ok(results) => {
                     let prev_tags = if query_words.len() > 1 {
@@ -139,7 +281,7 @@ impl Runner<'_, '_> {
                                                                 // from results (i)
                                     debug!("Found exact tag: {:?}, {}", i[idx], idx);
                                 }
-                            } else {
+                            } else if !last_query_word.is_empty() {
                                 // Otherwise we will show the tag with highest frequency matching user
                                 // input before popular/suggested tags, unless --query-as-item is set
                                 // in which case we create an alfred item with what user has typed
@@ -174,6 +316,7 @@ impl Runner<'_, '_> {
                                 filter_idx.is_none() || idx != filter_idx.unwrap()
                             }),
                         )
+                        .filter(|&(_, tag)| !tag.0.trim().is_empty())
                         // Remove all tags that are already present in user query list
                         .filter(|&(_, tag)| {
                             if query_words.is_empty() {
@@ -190,7 +333,7 @@ impl Runner<'_, '_> {
                             let mut item_args = String::with_capacity(prev_tags_len + tag.0.len());
                             item_args.push_str(prev_tags);
                             item_args.push_str(&tag.0);
-                            ItemBuilder::new(tag.0.as_str())
+                            let mut item = ItemBuilder::new(tag.0.as_str())
                                 .subtitle(tag.1.to_string())
                                 .autocomplete(item_args.clone())
                                 .subtitle_mod(Modifier::Option, option_subtitle)
@@ -200,15 +343,16 @@ impl Runner<'_, '_> {
                                 .variable("toread", &toread_pin)
                                 .arg(item_args)
                                 .valid(true)
-                                .icon_path("tag.png")
-                                .into_item()
+                                .icon_path("tag.png");
+                            bind_selection(&mut item);
+                            item.into_item()
                         })
                         .collect::<Vec<Item>>();
                 }
             }
             debug!("alfred_items hast {} entities", alfred_items.len());
             if !query_words.is_empty() && alfred_items.is_empty() {
-                alfred_items = vec![ItemBuilder::new("Hit Return to bookmark the page!")
+                let mut item = ItemBuilder::new("Hit Return to bookmark the page!")
                     .icon_path("upload.png")
                     .arg(queries.as_str())
                     .subtitle("You may have entered duplicate tags!")
@@ -216,19 +360,21 @@ impl Runner<'_, '_> {
                     .variable("toread", &toread_pin)
                     .variable("tags", queries.as_str())
                     .subtitle_mod(Modifier::Option, option_subtitle)
-                    .subtitle_mod(Modifier::Control, control_subtitle)
-                    .into_item()];
+                    .subtitle_mod(Modifier::Control, control_subtitle);
+                bind_selection(&mut item);
+                alfred_items = vec![item.into_item()];
             }
-            if !no_existing_page && config.page_is_bookmarked && is_page_bookmarked(pinboard) {
-                let bookmark_present = ItemBuilder::new("You already have the bookmark!")
-                    .icon_path("bookmark-delete.png")
-                    .into_item();
-                alfred_items.insert(0, bookmark_present);
+            if post_filter && alfred_items.is_empty() && self.cache_wait_item.is_none() {
+                alfred_items.push(
+                    ItemBuilder::new("Type tags to bookmark this page")
+                        .subtitle("Type a semicolon to save without tags or add a note.")
+                        .valid(false)
+                        .icon_path("tag.png")
+                        .into_item(),
+                );
             }
-            if let Err(e) = self.write_output_items(alfred_items, Option::<Vec<(&str, &str)>>::None)
-            {
-                error!("list: Couldn't write to Alfred: {:?}", e);
-            }
+            alfred_items.extend(bookmark_present);
+            self.write_output_items(alfred_items, Some(variables));
         } else {
             if q.is_some() && !q.unwrap().is_empty() {
                 warn!(
@@ -248,139 +394,80 @@ impl Runner<'_, '_> {
                         .into_item()
                 })
                 .collect::<Vec<Item>>();
-            if let Err(e) = self.write_output_items(items, Option::<Vec<(&str, &str)>>::None) {
-                error!("list: Couldn't write to Alfred: {:?}", e);
-            }
+            self.write_output_items(items, None::<[(&str, &str); 0]>);
         }
     }
 }
 
-fn is_page_bookmarked(pinboard: &Pinboard) -> bool {
-    let found;
-
-    let exec_counter = env::var("apr_execution_counter")
-        .unwrap_or_else(|_| "1".to_string())
-        .parse::<usize>()
-        .unwrap_or(1);
-    debug!("exec_counter: {}", exec_counter);
-
-    if exec_counter == 1 {
-        let tab_info = browser_info::get();
-        found = match tab_info {
-            Ok(tab_info) => {
-                debug!("tab_info: {:?}", tab_info);
-                pinboard.find_url(&tab_info.url).is_ok_and(|op| {
-                    if let Some(vp) = op {
-                        assert!(!vp.is_empty());
-                        !vp.is_empty()
-                    } else {
-                        false
-                    }
-                })
-            }
-            Err(_) => false,
-        };
-        let _r = Data::save_to_file("bookmark_exists.json", &found);
-        debug!("bookmark found from browser info: {}", found);
-    } else {
-        found = Data::load_from_file("bookmark_exists.json").unwrap_or(false);
-        debug!("bookmark found from cache info: {}", found);
+fn post_page(config: &Config, suggest: bool) -> Option<PostPage> {
+    let account = config.pinboard_username().ok()?;
+    let continuation = env::var("apr_execution_counter")
+        .ok()
+        .and_then(|value| value.parse::<usize>().ok())
+        .is_some_and(|counter| counter > 1);
+    let mut page = continuation
+        .then(|| env::var(POST_PAGE_VARIABLE).ok())
+        .flatten()
+        .and_then(|value| serde_json::from_str::<PostPage>(&value).ok())
+        .unwrap_or_else(|| PostPage {
+            account: account.to_owned(),
+            url: None,
+            fallback_browser: None,
+            suggested_tags: None,
+            suggestion_retry_at: None,
+            suggestion_job: None,
+            suggestion_authentication_failed: false,
+            suggestion_authentication_generation: None,
+        });
+    if page.account != account {
+        return Some(page);
     }
-    found
-}
-
-fn suggest_tags() -> Vec<Tag> {
-    use std::sync::mpsc;
-    let mut popular_tags = vec![];
-    let exec_counter = env::var("apr_execution_counter")
-        .unwrap_or_else(|_| "1".to_string())
-        .parse::<usize>()
-        .unwrap_or(1);
-
-    let (tx, rx) = mpsc::channel();
-    let thread_handle = thread::spawn(move || {
-        warn!("inside spawn thread, about to call get_suggested_tags");
-        let r = retrieve_popular_tags(exec_counter);
-        if let Ok(pt) = r {
-            let tx_result = tx.send(pt);
-            match tx_result {
-                Ok(()) => warn!("Sent the popular tags from child thread"),
-                Err(e) => warn!("Failed to send popular tags: {:?}", e),
+    if page.url.is_none() && page.fallback_browser.is_none() {
+        match browser_info::get_passive() {
+            Ok(browser_info::BrowserLookup::Tab(tab)) => page.url = Some(tab.url),
+            Ok(browser_info::BrowserLookup::NeedsInteraction(browser)) => {
+                page.fallback_browser = Some(browser);
             }
-        } else {
-            warn!("get_suggested_tags: {:?}", r);
+            Err(_) => {}
         }
-    });
-    if exec_counter == 1 {
-        thread::sleep(time::Duration::from_secs(1));
-    } else {
-        thread_handle.join().expect("Child thread terminated");
     }
-
-    if let Ok(pt) = rx.try_recv() {
-        warn!("* received popular tags from child: {:?}", pt);
-        popular_tags = pt;
-    } else {
-        warn!("child didn't produce usable result.");
+    if page.suggestion_authentication_failed {
+        if authentication_generation(config) == page.suggestion_authentication_generation {
+            page.suggestion_retry_at = Some(Utc::now() + SUGGESTION_RETRY_DELAY);
+            return Some(page);
+        }
+        page.suggestion_authentication_failed = false;
+        page.suggestion_authentication_generation = None;
+        page.suggestion_retry_at = None;
     }
-
-    popular_tags
-}
-/// Retrieves popular tags from a Web API call for first run and caches them for subsequent runs.
-fn retrieve_popular_tags(exec_counter: usize) -> Result<Vec<Tag>, Box<dyn std::error::Error>> {
-    debug!("Starting in get_suggested_tags");
-
-    // TODO: Don't create another pinboard instance. use the one list.rs receives to be shared with
-    // the thread that runs this function.
-    // FIXME: If run from outside Alfred (say terminal),
-    // the cache folder for 'config' and 'pinboard' will be different.
-    let config = Config::setup()?;
-    let pinboard = Pinboard::new(config.auth_token, alfred::env::workflow_cache())?;
-
-    // let ptags_fn = config.cache_dir().join("popular.tags.cache");
-    let ptags_fn = "popular.tags.cache";
-    let tags;
-    // let metadata = fs::metadata("foo.txt")?;
-
-    // if let Ok(time) = metadata.created() {
-    //     println!("{:?}", time);
-    // } else {
-    //     println!("Not supported on this platform");
-    // }
-    if exec_counter == 1 {
-        let tab_info = browser_info::get()?;
-        warn!("tab_info.url: {:?}", tab_info.url);
-        match pinboard.popular_tags(&tab_info.url) {
-            Ok(t) => {
-                tags = t;
-                info!("popular tags: {:?}", tags);
-                Data::save_to_file(ptags_fn, &tags)?;
+    if !suggest
+        || page.suggested_tags.is_some()
+        || page
+            .suggestion_retry_at
+            .is_some_and(|retry_at| retry_at > Utc::now())
+    {
+        return Some(page);
+    }
+    if let (Ok(cache_dir), Some(url)) = (config.bookmark_cache_dir(), page.url.as_deref()) {
+        page.suggestion_retry_at = None;
+        match poll_suggestions(&cache_dir, &page.account, url, &mut page.suggestion_job) {
+            Ok(Some(Suggestions::Available(tags))) => page.suggested_tags = Some(tags),
+            Ok(Some(Suggestions::Deferred(retry_at))) => page.suggestion_retry_at = retry_at,
+            Ok(Some(Suggestions::Authentication(generation))) => {
+                page.suggestion_authentication_failed = true;
+                page.suggestion_authentication_generation = generation;
+                page.suggestion_retry_at = Some(Utc::now() + SUGGESTION_RETRY_DELAY);
             }
-            Err(e) => {
-                // Never turn the error into a tag: it is shown as a selectable
-                // Alfred row and cached to disk, and its text can contain the
-                // API token. Log it redacted and offer no suggestions instead.
-                error!(
-                    "fetching popular tags: {}",
-                    crate::redact_token(&e.to_string())
+            Ok(None) => (), // The detached request is still running.
+            Err(error) => {
+                warn!(
+                    "Fetching popular tags: {}",
+                    crate::redact_token(&error.to_string())
                 );
-                tags = vec![];
-                // Overwrite the cache too. Leaving the previous page's tags there
-                // means the next keystroke reads them back and offers suggestions
-                // for a completely different URL.
-                Data::save_to_file(ptags_fn, &tags)?;
+                page.suggestion_job = None;
+                page.suggestion_retry_at = Some(Utc::now() + SUGGESTION_RETRY_DELAY);
             }
         }
-    } else {
-        warn!(
-            "**** reading suggested tags from cache file: {:?}",
-            ptags_fn
-        );
-        tags = Data::load_from_file(ptags_fn)
-            .ok_or_else(|| "bad popular tags cache file".to_string())?;
     }
-    Ok(tags
-        .into_iter()
-        .map(|t| Tag::new(t, 0).set_popular())
-        .collect::<Vec<Tag>>())
+    Some(page)
 }

@@ -126,11 +126,14 @@ use chrono::Duration;
 use reqwest;
 use semver::Version;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::env as StdEnv;
-use std::fs::{remove_file, File};
-use std::io::BufWriter;
-use std::path::PathBuf;
+use std::fs::{self, File, OpenOptions};
+use std::io::{self, BufReader, BufWriter, Cursor, Read, Seek, Write};
+use std::path::{Path, PathBuf};
 use std::sync::mpsc::Receiver;
+use tempfile::{Builder as TempFileBuilder, NamedTempFile};
+use unicode_normalization::UnicodeNormalization;
 use url::Url;
 mod imp;
 mod releaser;
@@ -143,9 +146,302 @@ mod tests;
 ///
 /// [`set_interval()`]: struct.Updater.html#method.set_interval
 pub const UPDATE_INTERVAL: i64 = 24 * 60 * 60;
+const DOWNLOAD_RETENTION: std::time::Duration = std::time::Duration::from_secs(24 * 60 * 60);
+const MAX_WORKFLOW_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_PLIST_BYTES: u64 = 8 * 1024 * 1024;
+const ASSET_RECOVERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15);
 
-pub use self::releaser::GithubReleaser;
-pub use self::releaser::Releaser;
+use self::imp::ReleaseCache;
+pub use self::releaser::{is_missing_response, GithubReleaser, ReleaseCheck, Releaser};
+
+/// Parse the version of a workflow, including the optional Git tag prefix.
+///
+/// # Errors
+/// Returns an error if the version is not valid SemVer.
+pub fn parse_workflow_version(version: &str) -> std::result::Result<Version, semver::Error> {
+    Version::parse(version.strip_prefix('v').unwrap_or(version))
+}
+
+fn github_asset_request(
+    client: &reqwest::blocking::Client,
+    url: Url,
+) -> reqwest::blocking::RequestBuilder {
+    client
+        .get(url)
+        .header(reqwest::header::ACCEPT, "application/octet-stream")
+        .header("X-GitHub-Api-Version", "2022-11-28")
+        .header(
+            reqwest::header::USER_AGENT,
+            concat!(env!("CARGO_PKG_NAME"), "/", env!("CARGO_PKG_VERSION")),
+        )
+}
+
+#[derive(Debug)]
+struct InvalidWorkflowBundle(anyhow::Error);
+
+impl std::fmt::Display for InvalidWorkflowBundle {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(formatter)
+    }
+}
+
+impl std::error::Error for InvalidWorkflowBundle {}
+
+/// Whether the asset is confirmed missing or returned bytes that cannot be installed.
+pub fn is_unavailable_workflow_asset(error: &anyhow::Error) -> bool {
+    is_missing_response(error) || error.is::<InvalidWorkflowBundle>()
+}
+
+fn verify_recovering_asset(
+    url: &Url,
+    version: &Version,
+    bundle_id: Option<&str>,
+    required_executable: Option<&str>,
+) -> Result<bool> {
+    let request = github_asset_request(&reqwest::blocking::Client::new(), url.clone())
+        .timeout(ASSET_RECOVERY_TIMEOUT);
+    let mut download = tempfile::tempfile()?;
+    match receive_workflow_bundle(
+        request,
+        true,
+        &mut download,
+        bundle_id,
+        Some(version),
+        required_executable,
+    ) {
+        Ok(()) => Ok(true),
+        Err(error) if is_unavailable_workflow_asset(&error) => Ok(false),
+        Err(error) => Err(error),
+    }
+}
+
+fn receive_workflow_bundle(
+    request: reqwest::blocking::RequestBuilder,
+    from_asset_api: bool,
+    file: &mut File,
+    bundle_id: Option<&str>,
+    version: Option<&Version>,
+    required_executable: Option<&str>,
+) -> Result<()> {
+    let mut response = request.send()?.error_for_status()?;
+    let returned_metadata = from_asset_api
+        && response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|content_type| content_type.to_ascii_lowercase().contains("json"));
+    if response.status() != reqwest::StatusCode::OK || returned_metadata {
+        return Err(InvalidWorkflowBundle(anyhow!(
+            "the asset endpoint did not return a workflow bundle"
+        ))
+        .into());
+    }
+    {
+        let mut writer = BufWriter::with_capacity(0x10_0000, &mut *file);
+        let mut buffer = [0; 0x1_0000];
+        let mut copied = 0;
+        loop {
+            // An interrupted 200 response has not supplied installable bytes.
+            // Distinguish failed reads from local write errors so it enters
+            // asset recovery without blaming GitHub for a full disk.
+            let count = response
+                .read(&mut buffer)
+                .map_err(|error| InvalidWorkflowBundle(anyhow!(error)))?;
+            if count == 0 {
+                break;
+            }
+            copied += count as u64;
+            if copied > MAX_WORKFLOW_BYTES {
+                return Err(InvalidWorkflowBundle(anyhow!("workflow bundle is too large")).into());
+            }
+            writer.write_all(&buffer[..count])?;
+        }
+        writer.flush()?;
+    }
+    file.rewind()?;
+    validate_workflow_identity(
+        BufReader::new(file),
+        bundle_id,
+        version,
+        required_executable,
+    )
+    .map_err(InvalidWorkflowBundle)?;
+    Ok(())
+}
+
+/// Verify the archive and return the workflow's bundle identifier and version.
+///
+/// # Errors
+/// Returns an error for an unreadable ZIP or missing or invalid workflow metadata.
+fn validate_workflow_bundle(
+    reader: impl Read + Seek,
+    required_executable: Option<&str>,
+) -> Result<(String, String)> {
+    let mut archive = zip::ZipArchive::new(reader)?;
+    archive.validate_header_consistency()?;
+    let mut destinations = HashMap::new();
+    let mut remaining = MAX_WORKFLOW_BYTES;
+    let mut manifest = None;
+    let mut has_required_executable = required_executable.is_none();
+    for index in 0..archive.len() {
+        let mut entry = archive.by_index(index)?;
+        // The ZIP reader applies Unicode Path overrides even to name_raw(),
+        // but macOS's extractor uses the original header name. Refuse that
+        // alternate representation so both readers validate the same files.
+        if entry
+            .extra_data_fields()
+            .any(|field| matches!(field, zip::extra_fields::ExtraField::UnicodePath(_)))
+        {
+            bail!("alternate ZIP filenames are not supported in workflow bundles");
+        }
+        let filename = entry.name()?;
+        let filename = filename.strip_prefix("./").unwrap_or(&filename);
+        let path = filename.strip_suffix('/').unwrap_or(filename);
+        if entry.enclosed_name().is_none()
+            || entry.is_symlink()
+            || path.contains('\\')
+            || path.chars().any(|character| character.is_ascii_control())
+            || path.split('/').any(|part| matches!(part, "" | "." | ".."))
+        {
+            bail!("invalid path in workflow bundle");
+        }
+        // macOS also folds Unicode case and normalization when comparing paths.
+        let destination: String = path.nfd().flat_map(char::to_uppercase).nfd().collect();
+        let is_manifest = destination == "INFO.PLIST";
+        if destinations.insert(destination, entry.is_dir()).is_some() {
+            bail!("duplicate extracted path in workflow bundle");
+        }
+        let size = entry.size();
+        if size > remaining {
+            bail!("workflow bundle is too large");
+        }
+        remaining -= size;
+        if is_manifest && (filename != "info.plist" || !entry.is_file() || size > MAX_PLIST_BYTES) {
+            bail!("invalid info.plist entry in workflow bundle");
+        }
+        if Some(filename) == required_executable {
+            has_required_executable = entry.is_file()
+                && size > 0
+                && entry
+                    .unix_mode()
+                    .is_some_and(|mode| mode & 0o170_000 == 0o100_000 && mode & 0o100 != 0);
+        }
+        let mut content = (&mut entry).take(size + 1);
+        if is_manifest {
+            let mut bytes = Vec::new();
+            content.read_to_end(&mut bytes)?;
+            if bytes.len() as u64 != size {
+                bail!("incorrect info.plist length in workflow bundle");
+            }
+            manifest = Some(plist::Value::from_reader(Cursor::new(bytes))?);
+        } else if io::copy(&mut content, &mut io::sink())? != size {
+            bail!("incorrect ZIP entry length in workflow bundle");
+        }
+    }
+    for path in destinations.keys() {
+        for (separator, _) in path.match_indices('/') {
+            if destinations.get(&path[..separator]) == Some(&false) {
+                bail!("a file in the workflow bundle is also used as a directory");
+            }
+        }
+    }
+    let info = manifest
+        .as_ref()
+        .and_then(plist::Value::as_dictionary)
+        .ok_or_else(|| anyhow!("workflow bundle has no valid info.plist"))?;
+    let get_string = |key: &str| {
+        info.get(key)
+            .and_then(plist::Value::as_string)
+            .filter(|value| !value.trim().is_empty())
+    };
+    let bundle_id = get_string("bundleid")
+        .ok_or_else(|| anyhow!("info.plist has no workflow bundle identifier"))?;
+    let version =
+        get_string("version").ok_or_else(|| anyhow!("info.plist has no workflow version"))?;
+    if get_string("name").is_none()
+        || !info
+            .get("objects")
+            .is_some_and(|value| value.as_array().is_some())
+        || !info
+            .get("connections")
+            .is_some_and(|value| value.as_dictionary().is_some())
+    {
+        bail!("info.plist does not describe an Alfred workflow");
+    }
+    if let Some(executable) = required_executable.filter(|_| !has_required_executable) {
+        bail!("workflow bundle does not contain a valid {executable} executable");
+    }
+    Ok((bundle_id.to_owned(), version.to_owned()))
+}
+
+/// Check an Alfred archive's identity, version, and required executable, if specified.
+///
+/// # Errors
+/// Returns an error for an invalid bundle, missing executable, or different ID or version.
+pub fn validate_selected_workflow_bundle(
+    reader: impl Read + Seek,
+    expected_bundle_id: &str,
+    expected_version: &Version,
+    required_executable: Option<&str>,
+) -> Result<()> {
+    validate_workflow_identity(
+        reader,
+        Some(expected_bundle_id),
+        Some(expected_version),
+        required_executable,
+    )
+}
+
+fn validate_workflow_identity(
+    reader: impl Read + Seek,
+    expected_bundle_id: Option<&str>,
+    expected_version: Option<&Version>,
+    required_executable: Option<&str>,
+) -> Result<()> {
+    let (bundle_id, version) = validate_workflow_bundle(reader, required_executable)?;
+    if expected_bundle_id.is_some_and(|expected| bundle_id != expected) {
+        bail!("the downloaded bundle has a different workflow identifier");
+    }
+    if expected_version
+        .is_some_and(|expected| parse_workflow_version(&version).ok().as_ref() != Some(expected))
+    {
+        bail!("the downloaded bundle has a different workflow version");
+    }
+    Ok(())
+}
+
+fn prune_old_downloads(directory: &Path, prefix: &str, selected: &Version) -> io::Result<()> {
+    for entry in fs::read_dir(directory)? {
+        let entry = entry?;
+        let name = entry.file_name();
+        let Some(version) = name
+            .to_str()
+            .and_then(|name| name.strip_prefix(prefix))
+            .and_then(|name| name.strip_suffix(".alfredworkflow"))
+            .and_then(|name| {
+                // Versions can't contain underscores. Older downloads used no suffix.
+                let version = name.split_once('_').map_or(name, |(version, _)| version);
+                Version::parse(version).ok()
+            })
+        else {
+            continue;
+        };
+        if imp::version_precedes(selected, &version) || !entry.file_type()?.is_file() {
+            continue;
+        }
+        // An earlier selection may still be opening in Alfred. Keep recent
+        // downloads so the other install can read its original bundle.
+        if entry
+            .metadata()?
+            .modified()?
+            .elapsed()
+            .is_ok_and(|age| age >= DOWNLOAD_RETENTION)
+        {
+            fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
 
 /// Struct to check for & download the latest release of workflow from a remote server.
 pub struct Updater<T>
@@ -154,6 +450,8 @@ where
 {
     state: imp::UpdaterState,
     releaser: RefCell<T>,
+    expected_bundle_id: Option<String>,
+    required_executable: Option<String>,
 }
 
 impl Updater<GithubReleaser> {
@@ -183,9 +481,7 @@ impl Updater<GithubReleaser> {
     /// To download an available release use [`download_latest()`] method afterwards.
     ///
     /// # Errors
-    /// Error will happen during calling this method if:
-    /// - `Updater` state cannot be read/written during instantiation, or
-    /// - The workflow version cannot be parsed as semantic version compatible identifier.
+    /// Returns an error if the installed workflow version cannot be parsed.
     ///
     /// [`init()`]: struct.Updater.html#method.init
     /// [`update_ready()`]: struct.Updater.html#method.update_ready
@@ -205,6 +501,20 @@ impl<T> Updater<T>
 where
     T: Releaser + Send + 'static,
 {
+    /// Require a recovering asset to carry this workflow's bundle identifier.
+    #[must_use]
+    pub fn with_expected_bundle_id(mut self, bundle_id: &str) -> Self {
+        self.expected_bundle_id = Some(bundle_id.to_owned());
+        self
+    }
+
+    /// Require a root-level executable in the downloaded or recovered archive.
+    #[must_use]
+    pub fn with_required_executable(mut self, name: &str) -> Self {
+        self.required_executable = Some(name.to_owned());
+        self
+    }
+
     /// Create an `Updater` object that will interface with a remote repository for updating operations.
     ///
     /// `repo_name` is an arbitrary tag/identifier associated with the remote repository.
@@ -351,44 +661,46 @@ where
     /// [`UPDATE_INTERVAL`]: constant.UPDATE_INTERVAL.html
     #[allow(clippy::missing_panics_doc)]
     pub fn init(&self) -> Result<()> {
-        use self::imp::LATEST_UPDATE_INFO_CACHE_FN_ASYNC;
         use std::sync::mpsc;
         let _ = env_logger::try_init();
 
         debug!("entering init");
 
         // file for status of last update check
-        let p = Self::build_data_fn()?.with_file_name(LATEST_UPDATE_INFO_CACHE_FN_ASYNC);
+        let p = Self::release_cache_path()?;
 
         let (tx, rx) = mpsc::channel();
 
         let force_check = self.update_interval() == 0;
-        if !force_check && self.last_check().is_none() {
+        let cache = Self::release_cache();
+        if !force_check
+            && self.last_check().is_none()
+            && !matches!(cache, Some(ReleaseCache::MissingAsset { .. }))
+        {
             self.set_last_check(Utc::now());
             self.save()?;
             // This send is always successful
-            tx.send(Ok(None)).unwrap();
+            tx.send(Ok(imp::ReleasePayload {
+                release: None,
+                checked_at: None,
+            }))
+            .unwrap();
             debug!("  last check was set to now()");
-        } else if force_check || self.due_to_check() {
+        } else if self.is_check_due(cache.as_ref()) {
             // it's time to talk to remote server
             debug!(" calling start_releaser_worker");
             self.start_releaser_worker(tx, p)?;
         } else {
             debug!("  calling read_last_check_status");
-            let status = Self::read_last_check_status(&p)
-                .map(|last_check| {
-                    last_check.and_then(|info| {
-                        debug!("  read last_check_status: {:?}", info);
-                        if self.current_version() < info.version() {
-                            Some(info)
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .or(Ok(None));
-            debug!("  status: {:?}", status);
-            tx.send(status).unwrap();
+            let release = cache
+                .and_then(ReleaseCache::into_release)
+                .filter(|info| info.is_newer_than(self.current_version()));
+            let checked_at = release.as_ref().and_then(|info| info.fetched_at().copied());
+            tx.send(Ok(imp::ReleasePayload {
+                release,
+                checked_at,
+            }))
+            .unwrap();
         }
         *self.state.borrow_worker_mut() = Some(imp::MPSCState::new(rx));
         debug!("successfully set the state of release worker");
@@ -413,12 +725,10 @@ where
     ///
     /// # Note
     ///
-    /// - Since this method may block the current thread until a response is received from remote server,
-    /// workflow authors should consider scenarios where network connection is poor and the block can
-    /// take a long time (>1 second), and devise their workflow around it. An alternative to
-    /// this method is the non-blocking [`try_update_ready()`].
-    /// - The *very first* call to this method will always return false since it is assumed that
-    /// user has just downloaded and installed the workflow.
+    /// - This method can block while the server responds. Use the non-blocking
+    ///   [`try_update_ready()`] if the workflow needs to keep running while it waits.
+    /// - On a fresh cache, the default interval skips the first network check. Use
+    ///   [`set_interval(0)`][Self::set_interval] before [`init()`] to check immediately.
     ///
     /// # Example
     ///
@@ -473,10 +783,9 @@ where
     ///
     /// # Note
     ///
-    /// - To wait for the worker thread to deliver its release information you can use the blocking
-    /// [`update_ready()`] method.
-    /// - The *very first* call to this method will always return false since it is assumed that
-    /// user has just downloaded and installed the workflow.
+    /// - Use the blocking [`update_ready()`] method to wait for the worker thread.
+    /// - On a fresh cache, the default interval skips the first network check. Use
+    ///   [`set_interval(0)`][Self::set_interval] before [`init()`] to check immediately.
     ///
     /// # Example
     ///
@@ -616,13 +925,52 @@ where
     ///
     /// [`UPDATE_INTERVAL`]: constant.UPDATE_INTERVAL.html
     pub fn due_to_check(&self) -> bool {
+        self.is_check_due(Self::release_cache().as_ref())
+    }
+
+    /// Return whether a completed check since `attempt` has lost its cached result.
+    pub fn lost_release_result_since(&self, attempt: DateTime<Utc>) -> bool {
+        self.state
+            .last_successful_check
+            .get()
+            .is_some_and(|checked_at| checked_at >= attempt)
+            && Self::release_cache().is_none()
+    }
+
+    /// Return whether automatic checks are retrying a missing workflow asset.
+    pub fn is_retrying_missing_asset(&self) -> bool {
+        matches!(
+            Self::release_cache(),
+            Some(ReleaseCache::MissingAsset { .. })
+        )
+    }
+
+    fn is_check_due(&self, cache: Option<&ReleaseCache>) -> bool {
+        if self.update_interval() == 0 || cache.is_none() {
+            return true;
+        }
+        if let Some(ReleaseCache::MissingAsset { retry_after, .. }) = cache {
+            let remaining = *retry_after - Utc::now();
+            // A clock rollback cannot extend the short retry window.
+            return remaining <= Duration::zero() || remaining > imp::MISSING_ASSET_RETRY;
+        }
+        if let Some(ReleaseCache::Checked(Some(release))) = cache {
+            if release.is_newer_than(self.current_version())
+                && release.asset_api_url.is_none()
+                && self.releaser.borrow().provides_asset_identity()
+            {
+                return true;
+            }
+        }
         self.last_check().map_or(true, |dt| {
             debug!("last check: {}", dt);
             Utc::now().signed_duration_since(dt) > Duration::seconds(self.update_interval())
         })
     }
 
-    /// Method to download and save the latest release into workflow's cache dir.
+    /// Download the available release into the workflow's cache directory if it is newer than
+    /// the installed version. Call [`Self::update_ready()`] to resolve the current check or
+    /// [`Self::load_cached_newer_version()`] to use the previously checked release.
     ///
     /// If the download and save operations are both successful, it returns name of file in which the
     /// downloaded Alfred workflow bundle is saved.
@@ -695,54 +1043,203 @@ where
     /// can use it for further processing.
     ///
     /// # Errors
-    /// Downloading latest workflow can fail if network error, file error or Alfred environment variable
-    /// errors happen, or if [`Releaser`] cannot produce a usable download url.
+    /// This returns an error if there is no known newer release or if the download or save fails.
     ///
     /// [`Releaser`]: trait.Releaser.html
     pub fn download_latest(&self) -> Result<PathBuf> {
-        let url = self
-            .state
-            .download_url()
-            .ok_or_else(|| anyhow!("no release info avail yet"))?;
-        let client = reqwest::blocking::Client::new();
+        self.download_release(None, None)
+    }
 
-        client
-            .get(url)
-            .send()?
-            .error_for_status()
-            .map_err(Into::into)
-            .and_then(|mut resp| {
-                // Get workflow's dedicated cache folder & build a filename
-                let workflow_name = env::workflow_name()
-                    .unwrap_or_else(|| "WhyUNoNameYourOwnWorkflow".to_string())
-                    .chars()
-                    .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
-                    .collect::<String>();
-                let latest_release_downloaded_fn = env::workflow_cache()
-                    .ok_or_else(|| {
-                        anyhow!(
-                            "missing env variable for cache dir. forgot to set workflow bundle id?",
-                        )
-                    })
-                    .map(|mut cache_dir| {
-                        cache_dir
-                            .push(["latest_release_", &workflow_name, ".alfredworkflow"].concat());
-                        cache_dir
-                    })?;
-                // Save the file
-                File::create(&latest_release_downloaded_fn)
-                    .map_err(Into::into)
-                    .and_then(|fp| {
-                        let mut buf_writer = BufWriter::with_capacity(0x10_0000, fp);
-                        resp.copy_to(&mut buf_writer)?;
-                        Ok(())
-                    })
-                    .map_err(|e: anyhow::Error| {
-                        let _r = remove_file(&latest_release_downloaded_fn);
-                        e
-                    })?;
-                Ok(latest_release_downloaded_fn)
-            })
+    /// Download to the unversioned path after verifying the workflow and release version.
+    ///
+    /// # Errors
+    /// Returns an error when there is no known newer release or the workflow
+    /// cannot be downloaded or verified.
+    pub fn download_latest_workflow(&self, bundle_id: &str) -> Result<PathBuf> {
+        self.download_release(None, Some(bundle_id))
+    }
+
+    /// Download the selected version from the loaded release metadata.
+    ///
+    /// Each selection has its own file, so concurrent downloads can't replace
+    /// a bundle already handed off to an installer, even at the same version.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the loaded release differs from `version`, is
+    /// no longer newer than the installed version, or could not be downloaded.
+    pub fn download_version(&self, version: &Version) -> Result<PathBuf> {
+        self.download_release(Some(version), None)
+    }
+
+    /// Download and verify a bundle for a specific workflow before publishing it.
+    ///
+    /// # Errors
+    /// Returns an error if the bundle cannot be downloaded, or its identifier or
+    /// version does not match the selection.
+    pub fn download_workflow(&self, version: &Version, bundle_id: &str) -> Result<PathBuf> {
+        self.download_release(Some(version), Some(bundle_id))
+    }
+
+    fn download_release(
+        &self,
+        selected: Option<&Version>,
+        bundle_id: Option<&str>,
+    ) -> Result<PathBuf> {
+        let release = self
+            .state
+            .newer_release()
+            .ok_or_else(|| anyhow!("no release info for a newer version"))?;
+        if let Some(selected) = selected {
+            if selected != release.version() {
+                bail!("the loaded release differs from the selected version");
+            }
+        }
+        let workflow_name = env::workflow_name()
+            .unwrap_or_else(|| "WhyUNoNameYourOwnWorkflow".to_string())
+            .chars()
+            .map(|c| if c.is_ascii_alphanumeric() { c } else { '_' })
+            .collect::<String>();
+        let prefix = format!("latest_release_{workflow_name}_v");
+        let cache_dir = env::workflow_cache().ok_or_else(|| {
+            anyhow!("missing env variable for cache dir. forgot to set workflow bundle id?")
+        })?;
+        let client = reqwest::blocking::Client::new();
+        let request = if let Some(asset_api_url) = &release.asset_api_url {
+            // GitHub's browser URL can be reused by a replacement. Download
+            // the asset by its API identity, following GitHub's CDN redirect.
+            github_asset_request(&client, asset_api_url.clone())
+        } else {
+            client.get(release.downloadable_url.clone())
+        };
+        let mut download = if let Some(version) = selected {
+            TempFileBuilder::new()
+                .prefix(&format!("{prefix}{version}_"))
+                .suffix(".pending")
+                .tempfile_in(&cache_dir)?
+        } else {
+            NamedTempFile::new_in(&cache_dir)?
+        };
+        receive_workflow_bundle(
+            request,
+            release.asset_api_url.is_some(),
+            download.as_file_mut(),
+            bundle_id,
+            bundle_id.map(|_| release.version()),
+            self.required_executable.as_deref(),
+        )?;
+        let path = if let Some(version) = selected {
+            // Serialize cleanup so another invocation cannot remove a file
+            // between reading its directory entry and checking its age.
+            let lock = OpenOptions::new()
+                .create(true)
+                .truncate(false)
+                .write(true)
+                .open(cache_dir.join("workflow-download.lock"))?;
+            lock.lock()?;
+            // Keep the bundle from the time it's published, including after slow transfers.
+            download
+                .as_file()
+                .set_modified(std::time::SystemTime::now())?;
+            let path = download.path().with_extension("alfredworkflow");
+            download.persist_noclobber(&path)?;
+            if let Err(error) = prune_old_downloads(&cache_dir, &prefix, version) {
+                warn!("Couldn't clean up old workflow downloads: {error}");
+            }
+            path
+        } else {
+            let path = cache_dir.join(format!("latest_release_{workflow_name}.alfredworkflow"));
+            download.persist(&path)?;
+            path
+        };
+        Ok(path)
+    }
+
+    /// Clear the cached offer for this updater's loaded release and schedule a retry.
+    ///
+    /// The caller must hold the same cache lock used for release checks.
+    /// A different asset, or newer verification of the same asset, stays in the cache.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the missing release status cannot be written.
+    pub fn forget_cached_release(&self, transfer_started_at: DateTime<Utc>) -> Result<()> {
+        let Some(selected) = self.state.newer_release() else {
+            return Ok(());
+        };
+        let should_forget = match Self::release_cache() {
+            Some(ReleaseCache::Checked(Some(cached))) => {
+                // An older cache has no identity, so a later check supersedes it.
+                cached.matches_asset(&selected)
+                    && (selected.asset_api_url.is_some()
+                        || cached.fetched_at() == selected.fetched_at())
+                    && cached
+                        .asset_verified_at
+                        .is_none_or(|checked_at| checked_at < transfer_started_at)
+            }
+            Some(ReleaseCache::MissingAsset {
+                checked_at: None,
+                failed_asset: Some(asset),
+                failed_transfer_started_at: Some(previous),
+                failed_version: Some(version),
+                ..
+            }) => {
+                // Keep the most recent failure when transfers overlap. An older
+                // successful transfer must not revive a newer failed download.
+                Some(&asset) == selected.asset_api_url.as_ref()
+                    && version == selected.version
+                    && previous < transfer_started_at
+            }
+            _ => false,
+        };
+        if should_forget {
+            // A failed asset transfer does not establish a release withdrawal.
+            let cache = ReleaseCache::failed_download(selected, transfer_started_at);
+            crate::Data::save_to_file(Self::release_cache_path()?, &cache)?;
+        }
+        Ok(())
+    }
+
+    /// Record successful byte validation for the same offered asset, including recovery
+    /// from an earlier transfer failure. Later failures and release checks take priority.
+    ///
+    /// The caller must hold the same cache lock used for release checks.
+    ///
+    /// # Errors
+    /// Returns an error if the verification record cannot be written.
+    pub fn record_verified_download(&self, transfer_started_at: DateTime<Utc>) -> Result<bool> {
+        let Some(selected) = self.state.newer_release() else {
+            return Ok(false);
+        };
+        let mut cached = match Self::release_cache() {
+            Some(ReleaseCache::Checked(Some(cached))) => cached,
+            Some(ReleaseCache::MissingAsset {
+                checked_at: None,
+                failed_asset: Some(asset),
+                failed_transfer_started_at: Some(failed_at),
+                failed_version: Some(version),
+                ..
+            }) if Some(&asset) == selected.asset_api_url.as_ref()
+                && version == selected.version
+                && failed_at < transfer_started_at =>
+            {
+                // This later transfer proves that the same asset recovered.
+                // A completed release check carries checked_at and still wins.
+                selected.clone()
+            }
+            _ => return Ok(false),
+        };
+        if !selected.matches_asset(&cached) {
+            return Ok(false);
+        }
+        if Some(transfer_started_at) > cached.asset_verified_at {
+            cached.asset_verified_at = Some(transfer_started_at);
+            crate::Data::save_to_file(
+                Self::release_cache_path()?,
+                &ReleaseCache::Checked(Some(cached)),
+            )?;
+        }
+        Ok(true)
     }
 
     /// Returns the version for the latest downloadable workflow from [`Releaser`].
@@ -761,6 +1258,52 @@ where
     /// [`try_update_ready()`]: struct.Updater.html#method.try_update_ready
     pub fn latest_avail_version(&self) -> Option<Version> {
         self.state.latest_avail_version()
+    }
+
+    /// Return the immutable asset API URL for the currently loaded offer.
+    pub fn latest_avail_asset_identity(&self) -> Option<Url> {
+        self.state.newer_release()?.asset_api_url
+    }
+
+    /// Load the latest successfully checked release from disk if it is newer
+    /// than the installed workflow, making it available for download.
+    pub fn load_cached_newer_version(&self) -> Option<Version> {
+        let release = Self::release_cache()
+            .and_then(ReleaseCache::into_release)
+            .filter(|release| release.is_newer_than(self.current_version()));
+        let version = release.as_ref().map(|release| release.version().clone());
+        self.state.set_available_release(release);
+        version
+    }
+
+    /// Reuse an authoritative result published while the caller was waiting.
+    ///
+    /// The outer option indicates whether the check can be reused. The inner
+    /// option contains the newer version, if the check found one.
+    pub fn checked_since(&self, started_at: DateTime<Utc>) -> Option<Option<Version>> {
+        let checked_at = self.state.last_successful_check.get()?;
+        if checked_at < started_at {
+            return None;
+        }
+        let release = match Self::release_cache()? {
+            ReleaseCache::Checked(release) => release,
+            ReleaseCache::MissingAsset {
+                checked_at: result_at,
+                ..
+            } => {
+                return (result_at == Some(checked_at)).then_some(None);
+            }
+        };
+        if let Some(release) = &release {
+            if release.fetched_at() != Some(&checked_at) {
+                return None;
+            }
+        }
+        Some(
+            release
+                .filter(|release| release.is_newer_than(self.current_version()))
+                .map(|release| release.version().clone()),
+        )
     }
 
     /// Get workflow's current version
